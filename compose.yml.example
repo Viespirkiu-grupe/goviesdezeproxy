@@ -1,6 +1,7 @@
 services:
   goviesdezeproxy:
     build: .
+    image: ghcr.io/viespirkiu-grupe/goviesdezeproxy:v0.0.2
     container_name: goviesdezeproxy
     restart: unless-stopped
     ports:

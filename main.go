@@ -199,39 +199,10 @@ func main() {
 			w.Header().Set("Content-Range", cr)
 		}
 
-		// Step 4: Stream body directly
-		// Flush-capable?
-		flusher, _ := w.(http.Flusher)
-
 		// Write status before body to avoid implicit 200
 		w.WriteHeader(upRes.StatusCode)
 
-		buf := make([]byte, 32*1024)
-		for {
-			// if client disconnected, r.Context().Done() will cancel upReq and io.Copy will fail
-			select {
-			case <-r.Context().Done():
-				return
-			default:
-			}
-			n, readErr := upRes.Body.Read(buf)
-			if n > 0 {
-				if _, writeErr := w.Write(buf[:n]); writeErr != nil {
-					return // client gone
-				}
-				if flusher != nil {
-					flusher.Flush()
-				}
-			}
-			if readErr != nil {
-				if errors.Is(readErr, io.EOF) {
-					return
-				}
-				// propagate upstream read error as connection close
-				log.Printf("stream read error: %v", readErr)
-				return
-			}
-		}
+		io.Copy(w, upRes.Body)
 	}
 
 	r.Get("/{id}", handler)
