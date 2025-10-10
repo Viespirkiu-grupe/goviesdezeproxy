@@ -1,0 +1,7 @@
+services:
+  goviesdezeproxy:
+    build: .
+    container_name: goviesdeze
+    restart: unless-stopped
+    ports:
+      - 4000:4000
