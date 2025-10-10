@@ -127,6 +127,7 @@ func main() {
 
 		var info ProxyInfo
 		if err := json.NewDecoder(infoRes.Body).Decode(&info); err != nil {
+			log.Printf("info json decode error: %v", err)
 			http.Error(w, "invalid proxy info json", http.StatusBadGateway)
 			return
 		}
