@@ -178,8 +178,8 @@ func main() {
 		} else if ct := upRes.Header.Get("Content-Type"); ct != "" {
 			w.Header().Set("Content-Type", ct)
 		}
-		if info.ContentLength != "" {
-			w.Header().Set("Content-Length", info.ContentLength)
+		if info.ContentLength != 0 {
+			w.Header().Set("Content-Length", fmt.Sprintf("%d", info.ContentLength))
 		} else if cl := upRes.Header.Get("Content-Length"); cl != "" {
 			w.Header().Set("Content-Length", cl)
 		}
