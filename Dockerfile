@@ -7,7 +7,6 @@ COPY go.sum go.sum
 RUN go mod download
 
 COPY main.go main.go
-COPY internal internal
 
 RUN CGO_ENABLED=0 go build -o app .
 
