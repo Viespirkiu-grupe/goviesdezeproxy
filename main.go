@@ -22,9 +22,10 @@ import (
 
 type ProxyInfo struct {
 	FileURL       string            `json:"fileUrl"`
+	Extension     string            `json:"extension"`
 	Headers       map[string]string `json:"headers"`
 	ContentType   string            `json:"contentType"`
-	ContentLength string            `json:"contentLength"`
+	ContentLength int               `json:"contentLength"`
 	FileName      string            `json:"fileName"`
 }
 
