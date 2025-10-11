@@ -324,12 +324,7 @@ func main() {
 		}
 
 		// Step 3: Forward headers
-		w.Header().Set("Content-Type", "application/pdf")
-		if info.ContentLength != 0 {
-			w.Header().Set("Content-Length", fmt.Sprintf("%d", info.ContentLength))
-		} else if cl := upRes.Header.Get("Content-Length"); cl != "" {
-			w.Header().Set("Content-Length", cl)
-		}
+
 		if disp := upRes.Header.Get("Content-Disposition"); disp != "" && info.FileName == "" {
 			w.Header().Set("Content-Disposition", disp)
 		}
