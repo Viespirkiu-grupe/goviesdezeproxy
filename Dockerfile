@@ -7,6 +7,7 @@ COPY go.sum go.sum
 RUN go mod download
 
 COPY main.go main.go
+COPY ziputil ziputil
 
 RUN CGO_ENABLED=0 go build -o app .
 
