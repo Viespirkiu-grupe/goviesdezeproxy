@@ -180,11 +180,7 @@ func main() {
 		}
 
 		// Step 3: Forward headers
-		if info.ContentType != "" {
-			w.Header().Set("Content-Type", info.ContentType)
-		} else if ct := upRes.Header.Get("Content-Type"); ct != "" {
-			w.Header().Set("Content-Type", ct)
-		}
+
 		if info.ContentLength != 0 {
 			w.Header().Set("Content-Length", fmt.Sprintf("%d", info.ContentLength))
 		} else if cl := upRes.Header.Get("Content-Length"); cl != "" {
