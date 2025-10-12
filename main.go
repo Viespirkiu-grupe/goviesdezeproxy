@@ -349,10 +349,10 @@ func main() {
 			http.Error(w, "error reading upstream body", http.StatusBadGateway)
 			return
 		}
-		rdr, err := ziputil.GetFileFromZip(buf, file)
+		rdr, err := ziputil.GetFileFromArchive(buf, file)
 		if err != nil {
-			log.Printf("GetFileFromZip error: %v", err)
-			http.Error(w, "error extracting pdf from zip: "+err.Error(), http.StatusBadGateway)
+			log.Printf("GetFileFromArchive error: %v", err)
+			http.Error(w, "error extracting pdf from archive: "+err.Error(), http.StatusBadGateway)
 			return
 		}
 		defer rdr.Close()

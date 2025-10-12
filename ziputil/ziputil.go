@@ -7,7 +7,35 @@ import (
 	"io"
 	"path"
 	"strings"
+
+	"github.com/gen2brain/go-unarr"
 )
+
+func GetFileFromArchive(archiveBytes []byte, filename string) (io.ReadCloser, error) {
+	a, err := unarr.NewArchiveFromMemory(archiveBytes)
+	if err != nil {
+		return nil, fmt.Errorf("nepavyko atidaryti archyvo: %w", err)
+	}
+
+	defer func() {
+		if err != nil {
+			a.Close()
+		}
+	}()
+
+	err = a.EntryFor(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failas %q nerastas archyve: %w", filename, err)
+	}
+	defer a.Close()
+
+	b, err := a.ReadAll()
+	if err != nil {
+		return nil, fmt.Errorf("nepavyko nuskaityti failo %q: %w", filename, err)
+	}
+
+	return io.NopCloser(bytes.NewReader(b)), nil
+}
 
 // GetFileFromZip suranda faile esantį įrašą pagal filename ir grąžina jo turinį kaip io.ReadCloser.
 // filename lyginamas pagal basename (pvz. "failas.pdf" ras "dir/sub/failas.pdf").

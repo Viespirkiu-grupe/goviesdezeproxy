@@ -1,4 +1,4 @@
-FROM golang:1.25.1 AS builder
+FROM golang:1.25.2-alpine3.22 AS builder
 
 WORKDIR /temp
 
@@ -8,13 +8,13 @@ RUN go mod download
 
 COPY main.go main.go
 COPY ziputil ziputil
+RUN apk update && apk add --no-cache gcc g++ musl musl-dev libc-dev libc++-dev build-base && rm -rf /var/cache/apk/*
+RUN CGO_ENABLED=1 go build -o app .
 
-RUN CGO_ENABLED=0 go build -o app .
-
-FROM alpine:latest
+FROM alpine:3.22
 COPY --from=builder /temp/app /app
 
-RUN apk update && apk add --no-cache tesseract-ocr tesseract-ocr-data-lit tesseract-ocr-data-eng poppler-utils ghostscript && rm -rf /var/cache/apk/*
+RUN apk update && apk add --no-cache gcc g++ musl && rm -rf /var/cache/apk/*
 
 WORKDIR /work
 
