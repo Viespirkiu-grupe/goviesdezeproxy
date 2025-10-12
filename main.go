@@ -236,7 +236,7 @@ func main() {
 			return
 		}
 
-		if file == "" || !strings.HasSuffix(strings.ToLower(file), ".pdf") {
+		if file == "" {
 			http.Error(w, "file must end with .pdf", http.StatusBadRequest)
 			return
 		}
