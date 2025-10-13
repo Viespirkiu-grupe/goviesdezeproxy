@@ -350,6 +350,24 @@ func main() {
 			http.Error(w, "error reading upstream body", http.StatusBadGateway)
 			return
 		}
+
+		if req.URL.Query().Has("list") {
+			files, err := ziputil.ListFilesInArchive(buf)
+			if err != nil {
+				log.Printf("ListFilesInArchive error: %v", err)
+				http.Error(w, "error listing files in archive: "+err.Error(), http.StatusBadGateway)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			if err := json.NewEncoder(w).Encode(files); err != nil {
+				log.Printf("writing response body error: %v", err)
+				// cannot write http.Error here as headers and status are already sent
+				return
+			}
+			return
+		}
+
 		rdr, err := ziputil.GetFileFromArchive(buf, file)
 		if err != nil {
 			log.Printf("GetFileFromArchive error: %v", err)

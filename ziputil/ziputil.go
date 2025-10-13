@@ -11,6 +11,16 @@ import (
 	"github.com/gen2brain/go-unarr"
 )
 
+func ListFilesInArchive(zipBytes []byte) ([]string, error) {
+	a, err := unarr.NewArchiveFromMemory(zipBytes)
+	if err != nil {
+		return nil, fmt.Errorf("nepavyko atidaryti archyvo: %w", err)
+	}
+	defer a.Close()
+
+	return a.List()
+}
+
 func GetFileFromArchive(archiveBytes []byte, filename string) (io.ReadCloser, error) {
 	a, err := unarr.NewArchiveFromMemory(archiveBytes)
 	if err != nil {
