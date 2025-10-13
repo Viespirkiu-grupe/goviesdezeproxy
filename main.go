@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -330,7 +331,7 @@ func main() {
 		}
 		if info.FileName != "" {
 			// inline; filename*=UTF-8''... covers unicode safely
-			fnStar := url.PathEscape(info.FileName)
+			fnStar := filepath.Base(url.PathEscape(file))
 			w.Header().Set("Content-Disposition",
 				fmt.Sprintf("inline; filename*=UTF-8''%s", fnStar))
 		}
