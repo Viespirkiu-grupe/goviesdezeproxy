@@ -12,10 +12,14 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 
 	"github.com/Viespirkiu-grupe/goviesdezeproxy/ziputil"
 	"github.com/go-chi/chi/v5"
@@ -31,6 +35,8 @@ type ProxyInfo struct {
 	ContentLength int               `json:"contentLength"`
 	FileName      string            `json:"fileName"`
 }
+
+var nonAlnumRe = regexp.MustCompile(`[^a-z0-9\.\-_]+`)
 
 func getenvMust(k string) string {
 	v := os.Getenv(k)
@@ -367,8 +373,27 @@ func main() {
 			}
 			return
 		}
+		files, err := ziputil.ListFilesInArchive(buf)
+		if err != nil {
+			log.Printf("ListFilesInArchive error: %v", err)
+			http.Error(w, "error listing files in archive: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+		var bestMatch string
+		bestSim := 0.0
+		for _, f := range files {
+			sim := similarity(f, file)
+			if sim > bestSim {
+				bestSim = sim
+				bestMatch = f
+			}
+		}
+		if bestSim < 0.4 {
+			http.Error(w, "file not found in archive", http.StatusNotFound)
+			return
+		}
 
-		rdr, err := ziputil.GetFileFromArchive(buf, file)
+		rdr, err := ziputil.GetFileFromArchive(buf, bestMatch)
 		if err != nil {
 			log.Printf("GetFileFromArchive error: %v", err)
 			http.Error(w, "error extracting pdf from archive: "+err.Error(), http.StatusBadGateway)
@@ -413,4 +438,75 @@ func main() {
 	defer cancel()
 	_ = srv.Shutdown(ctx)
 	log.Println("bye.")
+}
+
+func levenshtein(a, b string) int {
+	la := len(a)
+	lb := len(b)
+	if la == 0 {
+		return lb
+	}
+	if lb == 0 {
+		return la
+	}
+	prev := make([]int, lb+1)
+	cur := make([]int, lb+1)
+	for j := 0; j <= lb; j++ {
+		prev[j] = j
+	}
+	for i := 1; i <= la; i++ {
+		cur[0] = i
+		for j := 1; j <= lb; j++ {
+			cost := 0
+			if a[i-1] != b[j-1] {
+				cost = 1
+			}
+			ins := cur[j-1] + 1
+			del := prev[j] + 1
+			sub := prev[j-1] + cost
+			// min
+			min := ins
+			if del < min {
+				min = del
+			}
+			if sub < min {
+				min = sub
+			}
+			cur[j] = min
+		}
+		copy(prev, cur)
+	}
+	return cur[lb]
+}
+
+func normalize(s string) string {
+	s = strings.ToLower(s)
+	t := norm.NFKD.String(s)
+	b := make([]rune, 0, len(t))
+	for _, r := range t {
+		if unicode.Is(unicode.Mn, r) {
+			continue
+		}
+		b = append(b, r)
+	}
+	out := string(b)
+	out = nonAlnumRe.ReplaceAllString(out, "")
+	return out
+}
+
+func similarity(a, b string) float64 {
+	na := normalize(a)
+	nb := normalize(b)
+	if len(na) == 0 && len(nb) == 0 {
+		return 1.0
+	}
+	dist := levenshtein(na, nb)
+	maxLen := len(na)
+	if len(nb) > maxLen {
+		maxLen = len(nb)
+	}
+	if maxLen == 0 {
+		return 0.0
+	}
+	return 1.0 - float64(dist)/float64(maxLen)
 }
