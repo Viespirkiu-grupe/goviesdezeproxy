@@ -157,18 +157,18 @@ func main() {
 			http.Error(w, "failed to build upstream request", http.StatusInternalServerError)
 			return
 		}
-		// Pass-through only safe request headers from info.Headers
-		// for k, v := range info.Headers {
-		// 	// skip hop-by-hop / unsafe headers just in case
-		// 	kk := strings.ToLower(k)
-		// 	switch kk {
-		// 	case "connection", "proxy-connection", "keep-alive", "transfer-encoding", "upgrade", "te", "trailer":
-		// 		continue
-		// 	default:
-		// 		upReq.Header.Set(k, v)
-		// 	}
-		// }
-		// upReq.Header.Set("content-type", info.ContentType)
+
+		//Pass-through only safe request headers from info.Headers
+		for k, v := range info.Headers {
+			// skip hop-by-hop / unsafe headers just in case
+			kk := strings.ToLower(k)
+			switch kk {
+			case "connection", "proxy-connection", "keep-alive", "transfer-encoding", "upgrade", "te", "trailer":
+				continue
+			default:
+				upReq.Header.Set(k, v)
+			}
+		}
 
 		upRes, err := client.Do(upReq)
 		if err != nil {
