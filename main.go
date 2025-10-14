@@ -168,7 +168,7 @@ func main() {
 		// 		upReq.Header.Set(k, v)
 		// 	}
 		// }
-		upReq.Header.Set("content-type", info.ContentType)
+		// upReq.Header.Set("content-type", info.ContentType)
 
 		upRes, err := client.Do(upReq)
 		if err != nil {
@@ -209,6 +209,7 @@ func main() {
 
 		// Write status before body to avoid implicit 200
 		w.WriteHeader(upRes.StatusCode)
+		w.Header().Set("Content-Type", info.ContentType)
 
 		io.Copy(w, upRes.Body)
 	}
