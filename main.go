@@ -211,6 +211,9 @@ func main() {
 		w.WriteHeader(upRes.StatusCode)
 		w.Header().Set("Content-Type", info.ContentType)
 
+		// Cache-Control "public, max-age=2592000, immutable" always;
+		w.Header().Set("Cache-Control", "public, max-age=2592000, immutable")
+
 		io.Copy(w, upRes.Body)
 	}
 
@@ -404,6 +407,7 @@ func main() {
 		defer rdr.Close()
 
 		// Write status before body to avoid implicit 200
+		w.Header().Set("Cache-Control", "public, max-age=2592000, immutable")
 		w.WriteHeader(upRes.StatusCode)
 		_, err = io.Copy(w, rdr)
 		if err != nil {
