@@ -208,11 +208,11 @@ func main() {
 		}
 
 		// Write status before body to avoid implicit 200
-		w.WriteHeader(upRes.StatusCode)
 		w.Header().Set("Content-Type", info.ContentType)
 
 		// Cache-Control "public, max-age=2592000, immutable" always;
 		w.Header().Set("Cache-Control", "public, max-age=2592000, immutable")
+		w.WriteHeader(upRes.StatusCode)
 
 		io.Copy(w, upRes.Body)
 	}
