@@ -21,6 +21,29 @@ func ListFilesInArchive(zipBytes []byte) ([]string, error) {
 	return a.List()
 }
 
+func GetFileFromZipArchive(zipBytes []byte, filename string) (io.ReadCloser, error) {
+	rdr, err := bytes.NewReader(zipBytes))
+	if err != nil {
+		return nil, err
+	}
+	r, err := zip.NewReader(rdr)
+	if err != nil {
+		return r, err
+	}
+	defer r.Close()
+
+	for _, f := range r.File {
+		if f.Name == filename {
+			rc, err := f.Open()
+			if err != nil {
+				return nil, fmt.Errorf("nepavyko atidaryti failo %q: %w", filename, err)
+			}
+			return rc, nil
+		}
+	}
+	return nil, fmt.Errorf("failas %q zip’e nerastas", filename)
+}
+
 func GetFileFromArchive(archiveBytes []byte, filename string) (io.ReadCloser, error) {
 	a, err := unarr.NewArchiveFromMemory(archiveBytes)
 	if err != nil {
