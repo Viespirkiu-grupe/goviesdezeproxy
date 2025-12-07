@@ -401,6 +401,8 @@ func main() {
 
 		rdr, err := ziputil.GetFileFromArchive(buf, bestMatch)
 		if err != nil {
+			bestMatch = strings.Replace(bestMatch, "/", "\\/", 1)
+			rdr, err = ziputil.GetFileFromArchive(buf, bestMatch)
 			log.Printf("GetFileFromArchive error: %v %v", err, bestMatch)
 			http.Error(w, "error extracting pdf from archive", http.StatusBadGateway)
 			return
