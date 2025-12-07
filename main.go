@@ -407,8 +407,8 @@ func main() {
 			if err != nil {
 				log.Printf("GetFileFromArchive 2 error: %v %v", err, bestMatch)
 				http.Error(w, "error extracting pdf from archive", http.StatusBadGateway)
+				return
 			}
-			return
 		}
 		defer rdr.Close()
 
