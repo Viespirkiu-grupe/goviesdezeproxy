@@ -22,15 +22,11 @@ func ListFilesInArchive(zipBytes []byte) ([]string, error) {
 }
 
 func GetFileFromZipArchive(zipBytes []byte, filename string) (io.ReadCloser, error) {
-	rdr, err := bytes.NewReader(zipBytes))
+	rdr := bytes.NewReader(zipBytes)
+	r, err := zip.NewReader(rdr, int64(len(zipBytes)))
 	if err != nil {
 		return nil, err
 	}
-	r, err := zip.NewReader(rdr)
-	if err != nil {
-		return r, err
-	}
-	defer r.Close()
 
 	for _, f := range r.File {
 		if f.Name == filename {
