@@ -391,6 +391,7 @@ func main() {
 			if sim > bestSim {
 				bestSim = sim
 				bestMatch = f
+				log.Printf("considering file %q %v %s with similarity %.3f", f, f, f, sim)
 			}
 		}
 		if bestSim < 0.4 {
