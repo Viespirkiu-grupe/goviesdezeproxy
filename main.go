@@ -101,8 +101,10 @@ func main() {
 			}
 			requestedID = dokId + "/" + fileId
 		case id != "":
-			if _, err := strconv.Atoi(id); err != nil {
-				http.Error(w, "id must be a number", http.StatusBadRequest)
+			matchedNumber := regexp.MustCompile(`^\d+$`).MatchString(id)
+			matchedMD5 := regexp.MustCompile(`^[a-fA-F0-9]{32}$`).MatchString(id)
+			if !matchedNumber && !matchedMD5 {
+				http.Error(w, "id must be a number or MD5", http.StatusBadRequest)
 				return
 			}
 			requestedID = id
@@ -238,8 +240,10 @@ func main() {
 			}
 			requestedID = dokId + "/" + fileId
 		case id != "":
-			if _, err := strconv.Atoi(id); err != nil {
-				http.Error(w, "id must be a number", http.StatusBadRequest)
+			matchedNumber := regexp.MustCompile(`^\d+$`).MatchString(id)
+			matchedMD5 := regexp.MustCompile(`^[a-fA-F0-9]{32}$`).MatchString(id)
+			if !matchedNumber && !matchedMD5 {
+				http.Error(w, "id must be a number or MD5", http.StatusBadRequest)
 				return
 			}
 			requestedID = id
@@ -423,10 +427,10 @@ func main() {
 		}
 	}
 
-	r.Get("/{id:[0-9]+}", handler)
+	r.Get("/{id:[0-9a-fA-F]{32}|[0-9]+}", handler)
 	r.Get("/{dokId:[0-9]+}/{fileId:[0-9]+}", handler)
 	r.Get("/{id:[0-9]+}/*", handlerPdf)
-	r.Get("/{dokId:[0-9]+}/{fileId:[0-9]+}/*", handlerPdf)
+	r.Get("/{id:[0-9a-fA-F]{32}|[0-9]+}/*", handlerPdf)
 
 	srv := &http.Server{
 		Addr:              ":" + port,
