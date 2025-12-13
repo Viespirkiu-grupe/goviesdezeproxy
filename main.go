@@ -209,7 +209,9 @@ func main() {
 			// convert to PDF
 			tmpOutDir := os.TempDir()
 			cmd := exec.Command("libreoffice", "--headless", "--convert-to", "pdf", "--outdir", tmpOutDir, tmpIn.Name())
-			if err := cmd.Run(); err != nil {
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				log.Printf("LibreOffice conversion failed: %v, output: %s", err, string(output))
 				http.Error(w, "conversion failed", http.StatusInternalServerError)
 				return
 			}

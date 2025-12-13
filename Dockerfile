@@ -1,21 +1,37 @@
-FROM golang:1.25.2-alpine3.22 AS builder
+# Stage 1: Build Go binary
+FROM golang:1.25.2-bookworm AS builder
 
 WORKDIR /temp
 
-COPY go.mod go.mod
-COPY go.sum go.sum
+COPY go.mod go.sum ./
 RUN go mod download
 
-COPY main.go main.go
-COPY ziputil ziputil
-RUN apk update && apk add --no-cache gcc g++ musl musl-dev libc-dev libc++-dev build-base && rm -rf /var/cache/apk/*
+# Copy the full folder structure
+COPY . .
+
 RUN CGO_ENABLED=1 go build -o app .
 
-FROM alpine:3.22
-COPY --from=builder /temp/app /app
-
-RUN apk update && apk add --no-cache gcc g++ musl && rm -rf /var/cache/apk/*
+# Final image with Debian slim + headless LibreOffice
+FROM debian:bookworm-slim
 
 WORKDIR /work
+
+# Install LibreOffice headless + minimal runtime deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libreoffice-core \
+    libreoffice-writer \
+    libreoffice-calc \
+    libreoffice-impress \
+    libreoffice-common \
+    fonts-dejavu-core \
+    fonts-dejavu-extra \
+    fonts-liberation \
+    fonts-noto \
+    && rm -rf /var/lib/apt/lists/*
+
+
+
+COPY --from=builder /temp/app /app
 
 ENTRYPOINT ["/app"]
