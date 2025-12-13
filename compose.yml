@@ -1,0 +1,10 @@
+services:
+  goviesdezeproxy:
+    build: .
+    #    image: ghcr.io/viespirkiu-grupe/goviesdezeproxy:main
+    container_name: goviesdezeproxy
+    restart: unless-stopped
+    ports:
+      - 4000:4000
+    env_file:
+      - .env

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"regexp"
@@ -189,6 +190,54 @@ func main() {
 			return
 		}
 
+		convertTo := r.URL.Query().Get("convertTo")
+		if convertTo == "pdf" {
+			// save upstream to temp file
+			tmpIn, err := os.CreateTemp("", "upstream-*")
+			if err != nil {
+				http.Error(w, "failed to create temp file", http.StatusInternalServerError)
+				return
+			}
+			defer os.Remove(tmpIn.Name())
+			_, err = io.Copy(tmpIn, upRes.Body)
+			if err != nil {
+				http.Error(w, "failed to save upstream file", http.StatusInternalServerError)
+				return
+			}
+			tmpIn.Close()
+
+			// convert to PDF
+			tmpOutDir := os.TempDir()
+			cmd := exec.Command("libreoffice", "--headless", "--convert-to", "pdf", "--outdir", tmpOutDir, tmpIn.Name())
+			if err := cmd.Run(); err != nil {
+				http.Error(w, "conversion failed", http.StatusInternalServerError)
+				return
+			}
+
+			// locate converted PDF
+			pdfFile := filepath.Join(tmpOutDir, strings.TrimSuffix(filepath.Base(tmpIn.Name()), filepath.Ext(tmpIn.Name()))+".pdf")
+			f, err := os.Open(pdfFile)
+			if err != nil {
+				http.Error(w, "failed to open converted file", http.StatusInternalServerError)
+				return
+			}
+			defer func() {
+				f.Close()
+				os.Remove(pdfFile)
+			}()
+
+			// reuse your header logic
+			if info.FileName != "" {
+				fnStar := url.PathEscape(info.FileName)
+				w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename*=UTF-8''%s.pdf", fnStar))
+			}
+			w.Header().Set("Content-Type", "application/pdf")
+			w.Header().Set("Cache-Control", "public, max-age=2592000, immutable")
+			w.WriteHeader(upRes.StatusCode)
+			io.Copy(w, f)
+			return
+		}
+
 		// Step 3: Forward headers
 
 		if disp := upRes.Header.Get("Content-Disposition"); disp != "" && info.FileName == "" {
@@ -219,7 +268,7 @@ func main() {
 		io.Copy(w, upRes.Body)
 	}
 
-	handlerPdf := func(w http.ResponseWriter, r *http.Request) {
+	handlerArchive := func(w http.ResponseWriter, r *http.Request) {
 		// Build requestedId from path params
 		id := chi.URLParam(r, "id")
 		dokId := chi.URLParam(r, "dokId")
@@ -297,15 +346,10 @@ func main() {
 			return
 		}
 
-		pdfURL := info.FileURL
-		if strings.Contains(pdfURL, "?") {
-			pdfURL += "&format=pdf"
-		} else {
-			pdfURL += "?format=pdf"
-		}
+		fileURL := info.FileURL
 
 		// Step 2: Request actual file (streaming, no buffering)
-		upReq, err := http.NewRequestWithContext(r.Context(), http.MethodGet, pdfURL, nil)
+		upReq, err := http.NewRequestWithContext(r.Context(), http.MethodGet, fileURL, nil)
 		if err != nil {
 			http.Error(w, "failed to build upstream request", http.StatusInternalServerError)
 			return
@@ -427,12 +471,11 @@ func main() {
 		}
 	}
 
-	r.Get("/{dokId:[0-9]+}/{fileId:[0-9]+}/*", handlerPdf)
-	r.Get("/{id:[0-9a-fA-F]{32}|[0-9]+}/*", handlerPdf)
+	r.Get("/{dokId:[0-9]+}/{fileId:[0-9]+}/*", handlerArchive)
+	r.Get("/{id:[0-9a-fA-F]{32}|[0-9]+}/*", handlerArchive)
 
 	r.Get("/{dokId:[0-9]+}/{fileId:[0-9]+}", handler)
 	r.Get("/{id:[0-9a-fA-F]{32}|[0-9]+}", handler)
-
 
 	srv := &http.Server{
 		Addr:              ":" + port,
