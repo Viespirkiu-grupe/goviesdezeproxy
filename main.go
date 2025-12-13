@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"regexp"
@@ -18,10 +17,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"unicode"
 
-	"golang.org/x/text/unicode/norm"
-
+	"github.com/Viespirkiu-grupe/goviesdezeproxy/utils"
 	"github.com/Viespirkiu-grupe/goviesdezeproxy/ziputil"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -36,8 +33,6 @@ type ProxyInfo struct {
 	ContentLength int               `json:"contentLength"`
 	FileName      string            `json:"fileName"`
 }
-
-var nonAlnumRe = regexp.MustCompile(`[^a-z0-9\.\-_]+`)
 
 func getenvMust(k string) string {
 	v := os.Getenv(k)
@@ -190,53 +185,39 @@ func main() {
 			return
 		}
 
-		convertTo := r.URL.Query().Get("convertTo")
-		if convertTo == "pdf" {
-			// save upstream to temp file
-			tmpIn, err := os.CreateTemp("", "upstream-*")
-			if err != nil {
-				http.Error(w, "failed to create temp file", http.StatusInternalServerError)
-				return
+		convertTo := strings.ToLower(r.URL.Query().Get("convertTo"))
+		switch convertTo {
+		case "pdf":
+			if err := utils.ConvertDocumentReaderToPDF(
+				w,
+				r,
+				upRes.Body,
+				info.FileName,
+				upRes.StatusCode,
+			); err != nil {
+				log.Printf("pdf conversion error: %v", err)
+				http.Error(w, "conversion failed", http.StatusInternalServerError)
 			}
-			defer os.Remove(tmpIn.Name())
-			_, err = io.Copy(tmpIn, upRes.Body)
-			if err != nil {
-				http.Error(w, "failed to save upstream file", http.StatusInternalServerError)
-				return
-			}
-			tmpIn.Close()
+			return
 
-			// convert to PDF
-			tmpOutDir := os.TempDir()
-			cmd := exec.Command("libreoffice", "--headless", "--convert-to", "pdf", "--outdir", tmpOutDir, tmpIn.Name())
-			output, err := cmd.CombinedOutput()
+		case "jpg", "jpeg", "png", "tif", "tiff", "bmp", "prn", "gif", "jfif", "heic":
+			out, err := utils.ConvertImageReader(upRes.Body, convertTo)
 			if err != nil {
-				log.Printf("LibreOffice conversion failed: %v, output: %s", err, string(output))
+				log.Printf("image conversion error: %v", err)
 				http.Error(w, "conversion failed", http.StatusInternalServerError)
 				return
 			}
+			defer out.Close()
 
-			// locate converted PDF
-			pdfFile := filepath.Join(tmpOutDir, strings.TrimSuffix(filepath.Base(tmpIn.Name()), filepath.Ext(tmpIn.Name()))+".pdf")
-			f, err := os.Open(pdfFile)
-			if err != nil {
-				http.Error(w, "failed to open converted file", http.StatusInternalServerError)
-				return
-			}
-			defer func() {
-				f.Close()
-				os.Remove(pdfFile)
-			}()
-
-			// reuse your header logic
+			w.Header().Set("Content-Type", "image/"+convertTo)
 			if info.FileName != "" {
-				fnStar := url.PathEscape(info.FileName)
-				w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename*=UTF-8''%s.pdf", fnStar))
+				fn := strings.TrimSuffix(info.FileName, filepath.Ext(info.FileName)) + "." + convertTo
+				w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename*=UTF-8''%s", url.PathEscape(fn)))
 			}
-			w.Header().Set("Content-Type", "application/pdf")
-			w.Header().Set("Cache-Control", "public, max-age=2592000, immutable")
 			w.WriteHeader(upRes.StatusCode)
-			io.Copy(w, f)
+			if _, err := io.Copy(w, out); err != nil {
+				log.Printf("writing converted image failed: %v", err)
+			}
 			return
 		}
 
@@ -437,7 +418,7 @@ func main() {
 		var bestMatch string
 		bestSim := 0.0
 		for _, f := range files {
-			sim := similarity(f, file)
+			sim := utils.Similarity(f, file)
 			if sim > bestSim {
 				bestSim = sim
 				bestMatch = f
@@ -461,6 +442,21 @@ func main() {
 			}
 		}
 		defer rdr.Close()
+
+		convertTo := r.URL.Query().Get("convertTo")
+		if convertTo == "pdf" {
+			if err := utils.ConvertDocumentReaderToPDF(
+				w,
+				r,
+				rdr,
+				bestMatch,
+				upRes.StatusCode,
+			); err != nil {
+				log.Printf("archive pdf conversion error: %v", err)
+				http.Error(w, "conversion failed", http.StatusInternalServerError)
+			}
+			return
+		}
 
 		// Write status before body to avoid implicit 200
 		w.Header().Set("Cache-Control", "public, max-age=2592000, immutable")
@@ -501,75 +497,4 @@ func main() {
 	defer cancel()
 	_ = srv.Shutdown(ctx)
 	log.Println("bye.")
-}
-
-func levenshtein(a, b string) int {
-	la := len(a)
-	lb := len(b)
-	if la == 0 {
-		return lb
-	}
-	if lb == 0 {
-		return la
-	}
-	prev := make([]int, lb+1)
-	cur := make([]int, lb+1)
-	for j := 0; j <= lb; j++ {
-		prev[j] = j
-	}
-	for i := 1; i <= la; i++ {
-		cur[0] = i
-		for j := 1; j <= lb; j++ {
-			cost := 0
-			if a[i-1] != b[j-1] {
-				cost = 1
-			}
-			ins := cur[j-1] + 1
-			del := prev[j] + 1
-			sub := prev[j-1] + cost
-			// min
-			min := ins
-			if del < min {
-				min = del
-			}
-			if sub < min {
-				min = sub
-			}
-			cur[j] = min
-		}
-		copy(prev, cur)
-	}
-	return cur[lb]
-}
-
-func normalize(s string) string {
-	s = strings.ToLower(s)
-	t := norm.NFKD.String(s)
-	b := make([]rune, 0, len(t))
-	for _, r := range t {
-		if unicode.Is(unicode.Mn, r) {
-			continue
-		}
-		b = append(b, r)
-	}
-	out := string(b)
-	out = nonAlnumRe.ReplaceAllString(out, "")
-	return out
-}
-
-func similarity(a, b string) float64 {
-	na := normalize(a)
-	nb := normalize(b)
-	if len(na) == 0 && len(nb) == 0 {
-		return 1.0
-	}
-	dist := levenshtein(na, nb)
-	maxLen := len(na)
-	if len(nb) > maxLen {
-		maxLen = len(nb)
-	}
-	if maxLen == 0 {
-		return 0.0
-	}
-	return 1.0 - float64(dist)/float64(maxLen)
 }

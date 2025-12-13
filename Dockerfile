@@ -28,6 +28,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-dejavu-extra \
     fonts-liberation \
     fonts-noto \
+    libheif-dev \
+    imagemagick \
     && rm -rf /var/lib/apt/lists/*
 
 
