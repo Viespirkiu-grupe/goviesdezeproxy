@@ -427,10 +427,12 @@ func main() {
 		}
 	}
 
-	r.Get("/{id:[0-9a-fA-F]{32}|[0-9]+}", handler)
-	r.Get("/{dokId:[0-9]+}/{fileId:[0-9]+}", handler)
-	r.Get("/{id:[0-9]+}/*", handlerPdf)
+	r.Get("/{dokId:[0-9]+}/{fileId:[0-9]+}/*", handlerPdf)
 	r.Get("/{id:[0-9a-fA-F]{32}|[0-9]+}/*", handlerPdf)
+
+	r.Get("/{dokId:[0-9]+}/{fileId:[0-9]+}", handler)
+	r.Get("/{id:[0-9a-fA-F]{32}|[0-9]+}", handler)
+
 
 	srv := &http.Server{
 		Addr:              ":" + port,
