@@ -83,7 +83,16 @@ func ConvertDocumentReaderToPDF(
 	return err
 }
 
-// ConvertImageReaderToPDF converts an image reader into a PDF and streams it to w
+func imageWorkersCount() int {
+	count := sconv.String(os.Getenv("PDF_WORKERS_IMG_COUNT")).Int()
+	if count < 1 {
+		return 1
+	}
+	return count
+}
+
+var semaphoreImg = make(chan struct{}, imageWorkersCount())
+
 func ConvertImageReaderToPDF(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -91,6 +100,9 @@ func ConvertImageReaderToPDF(
 	origName string,
 	status int,
 ) error {
+	semaphoreImg <- struct{}{}        // acquire slot
+	defer func() { <-semaphoreImg }() // release slot
+
 	// Save the image to a temp file
 	tmpIn, err := os.CreateTemp("", "image-*")
 	if err != nil {
@@ -115,7 +127,7 @@ func ConvertImageReaderToPDF(
 		tmpIn.Name(),
 		"-units", "PixelsPerInch",
 		"-density", "300",
-		"-resize", "2480x3508",
+		"-resize", "2480x3508", // scale up or down, preserve aspect
 		"-gravity", "center",
 		"-background", "white",
 		"-extent", "2480x3508",
