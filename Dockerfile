@@ -32,8 +32,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     imagemagick \
     && rm -rf /var/lib/apt/lists/*
 
-
-
 COPY --from=builder /temp/app /app
+
+RUN sed -i 's/rights="none" pattern="PDF"/rights="read|write" pattern="PDF"/' \
+    /etc/ImageMagick-6/policy.xml
 
 ENTRYPOINT ["/app"]

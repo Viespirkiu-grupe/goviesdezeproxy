@@ -13,7 +13,15 @@ import (
 	"github.com/Viespirkiu-grupe/goviesdezeproxy/pkg/sconv"
 )
 
-var semaphoreDoc = make(chan struct{}, sconv.String(os.Getenv("PDF_WORKERS_DOC_COUNT")).Int()) // limit to 2 concurrent conversions
+func workersCount() int {
+	count := sconv.String(os.Getenv("PDF_WORKERS_DOC_COUNT")).Int()
+	if count == 0 {
+		return 1
+	}
+	return count
+}
+
+var semaphoreDoc = make(chan struct{}, workersCount())
 
 func ConvertDocumentReaderToPDF(
 	w http.ResponseWriter,
@@ -102,7 +110,17 @@ func ConvertImageReaderToPDF(
 	pdfPath := filepath.Join(tmpOutDir, baseName+".pdf")
 
 	// Convert image to PDF using ImageMagick
-	cmd := exec.Command("magick", tmpIn.Name(), pdfPath)
+	cmd := exec.Command(
+		"convert",
+		tmpIn.Name(),
+		"-units", "PixelsPerInch",
+		"-density", "300",
+		"-resize", "2480x3508",
+		"-gravity", "center",
+		"-background", "white",
+		"-extent", "2480x3508",
+		pdfPath,
+	)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("ImageMagick conversion failed: %w: %s", err, output)

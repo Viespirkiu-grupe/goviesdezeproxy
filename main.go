@@ -186,8 +186,32 @@ func main() {
 		}
 
 		convertTo := strings.ToLower(r.URL.Query().Get("convertTo"))
+		origExt := strings.ToLower(info.Extension)
+
+		isImage := map[string]bool{
+			"jpg": true, "jpeg": true, "png": true, "tif": true, "tiff": true,
+			"bmp": true, "prn": true, "gif": true, "jfif": true, "heic": true,
+			"avif": true, "webp": true,
+		}
+
 		switch convertTo {
 		case "pdf":
+			// If original is already an image, use image→PDF
+			if isImage[origExt] {
+				if err := utils.ConvertImageReaderToPDF(
+					w,
+					r,
+					upRes.Body,
+					info.FileName,
+					upRes.StatusCode,
+				); err != nil {
+					log.Printf("image→pdf conversion error: %v", err)
+					http.Error(w, "conversion failed", http.StatusInternalServerError)
+				}
+				return
+			}
+
+			// Otherwise use document→PDF
 			if err := utils.ConvertDocumentReaderToPDF(
 				w,
 				r,
@@ -200,7 +224,7 @@ func main() {
 			}
 			return
 
-		case "jpg", "jpeg", "png", "tif", "tiff", "bmp", "prn", "gif", "jfif", "heic":
+		case "jpg", "jpeg", "png", "tif", "tiff", "bmp", "prn", "gif", "jfif", "heic", "avif", "webp":
 			out, err := utils.ConvertImageReader(upRes.Body, convertTo)
 			if err != nil {
 				log.Printf("image conversion error: %v", err)
@@ -208,11 +232,14 @@ func main() {
 				return
 			}
 			defer out.Close()
-
+			// w eina i browseri .
 			w.Header().Set("Content-Type", "image/"+convertTo)
 			if info.FileName != "" {
 				fn := strings.TrimSuffix(info.FileName, filepath.Ext(info.FileName)) + "." + convertTo
-				w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename*=UTF-8''%s", url.PathEscape(fn)))
+				w.Header().Set(
+					"Content-Disposition",
+					fmt.Sprintf("inline; filename*=UTF-8''%s", url.PathEscape(fn)),
+				)
 			}
 			w.WriteHeader(upRes.StatusCode)
 			if _, err := io.Copy(w, out); err != nil {
@@ -443,8 +470,30 @@ func main() {
 		}
 		defer rdr.Close()
 
-		convertTo := r.URL.Query().Get("convertTo")
-		if convertTo == "pdf" {
+		convertTo := strings.ToLower(r.URL.Query().Get("convertTo"))
+		origExt := strings.ToLower(strings.TrimPrefix(filepath.Ext(bestMatch), "."))
+
+		isImage := map[string]bool{
+			"jpg": true, "jpeg": true, "png": true, "tif": true, "tiff": true,
+			"bmp": true, "prn": true, "gif": true, "jfif": true, "heic": true,
+		}
+
+		switch convertTo {
+		case "pdf":
+			if isImage[origExt] {
+				if err := utils.ConvertImageReaderToPDF(
+					w,
+					r,
+					rdr,
+					bestMatch,
+					upRes.StatusCode,
+				); err != nil {
+					log.Printf("archive image→pdf conversion error: %v", err)
+					http.Error(w, "conversion failed", http.StatusInternalServerError)
+				}
+				return
+			}
+
 			if err := utils.ConvertDocumentReaderToPDF(
 				w,
 				r,
@@ -452,8 +501,36 @@ func main() {
 				bestMatch,
 				upRes.StatusCode,
 			); err != nil {
-				log.Printf("archive pdf conversion error: %v", err)
+				log.Printf("archive document→pdf conversion error: %v", err)
 				http.Error(w, "conversion failed", http.StatusInternalServerError)
+			}
+			return
+
+		case "jpg", "jpeg", "png", "tif", "tiff", "bmp", "prn", "gif", "jfif", "heic":
+			// Only images can be converted to images
+			if !isImage[origExt] {
+				http.Error(w, "source file is not an image", http.StatusBadRequest)
+				return
+			}
+
+			out, err := utils.ConvertImageReader(rdr, convertTo)
+			if err != nil {
+				log.Printf("archive image→image conversion error: %v", err)
+				http.Error(w, "conversion failed", http.StatusInternalServerError)
+				return
+			}
+			defer out.Close()
+
+			w.Header().Set("Content-Type", "image/"+convertTo)
+			fn := strings.TrimSuffix(bestMatch, filepath.Ext(bestMatch)) + "." + convertTo
+			w.Header().Set(
+				"Content-Disposition",
+				fmt.Sprintf("inline; filename*=UTF-8''%s", url.PathEscape(fn)),
+			)
+			w.WriteHeader(upRes.StatusCode)
+
+			if _, err := io.Copy(w, out); err != nil {
+				log.Printf("writing converted image failed: %v", err)
 			}
 			return
 		}
