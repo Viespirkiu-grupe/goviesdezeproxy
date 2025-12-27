@@ -9,5 +9,6 @@ require (
 
 require (
 	github.com/gen2brain/go-unarr v0.2.4
+	github.com/ituoga/toolbox v0.0.29
 	golang.org/x/text v0.30.0
 )

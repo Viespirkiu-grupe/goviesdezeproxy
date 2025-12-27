@@ -9,7 +9,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/Viespirkiu-grupe/goviesdezeproxy/pkg/sconv"
 )
+
+var semaphoreDoc = make(chan struct{}, sconv.String(os.Getenv("PDF_WORKERS_DOC_COUNT")).Int()) // limit to 2 concurrent conversions
 
 func ConvertDocumentReaderToPDF(
 	w http.ResponseWriter,
@@ -18,6 +22,8 @@ func ConvertDocumentReaderToPDF(
 	origName string,
 	status int,
 ) error {
+	semaphoreDoc <- struct{}{}
+	defer func() { <-semaphoreDoc }()
 	tmpIn, err := os.CreateTemp("", "archive-*")
 	if err != nil {
 		return err
