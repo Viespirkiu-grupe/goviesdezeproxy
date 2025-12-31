@@ -420,229 +420,37 @@ func main() {
 			return
 		}
 
-		if info.Extension != "rar" {
+		var files []string
+		files, err = ziputil.IdentityFilesV2(buf)
+		if err != nil {
+			log.Printf("ListFilesInArchive error: %v", err)
+			http.Error(w, "error listing files in archive: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+		bestMatch, err := bestMatch(file, files)
+		if err != nil {
+			http.Error(w, "file not found in archive", http.StatusNotFound)
+			return
+		}
 
-			files, err := ziputil.ListFilesInArchive(buf)
+		rdr, err := ziputil.GetFileFromArchiveV2(buf, bestMatch)
+		if err != nil {
 			if err != nil {
-				log.Printf("ListFilesInArchive error: %v", err)
-				http.Error(w, "error listing files in archive: "+err.Error(), http.StatusBadGateway)
-				return
-			}
-			var bestMatch string
-			bestSim := 0.0
-			for _, f := range files {
-				sim := utils.Similarity(f, file)
-				if sim > bestSim {
-					bestSim = sim
-					bestMatch = f
-					log.Printf("considering file %q %v %s with similarity %.3f", f, f, f, sim)
-				}
-			}
-			if bestSim < 0.4 {
-				http.Error(w, "file not found in archive", http.StatusNotFound)
-				return
-			}
-
-			rdr, err := ziputil.GetFileFromArchive(buf, bestMatch)
-			if err != nil {
-				log.Printf("GetFileFromArchive 1 error: %v %v", err, bestMatch)
-				bestMatch = strings.Replace(bestMatch, "/", "\\/", 1)
-				rdr, err = ziputil.GetFileFromZipArchive(buf, bestMatch)
-				if err != nil {
-					log.Printf("GetFileFromArchive 2 error: %v %v", err, bestMatch)
-					http.Error(w, "error extracting pdf from archive", http.StatusBadGateway)
-					return
-				}
-			}
-			defer rdr.Close()
-
-			convertTo := strings.ToLower(r.URL.Query().Get("convertTo"))
-			origExt := strings.ToLower(strings.TrimPrefix(filepath.Ext(bestMatch), "."))
-
-			isImage := map[string]bool{
-				"jpg": true, "jpeg": true, "png": true, "tif": true, "tiff": true,
-				"bmp": true, "prn": true, "gif": true, "jfif": true, "heic": true,
-			}
-
-			switch convertTo {
-			case "pdf":
-				if isImage[origExt] {
-					if err := utils.ConvertImageReaderToPDF(
-						w,
-						r,
-						rdr,
-						bestMatch,
-						upRes.StatusCode,
-					); err != nil {
-						log.Printf("archive image→pdf conversion error: %v", err)
-						http.Error(w, "conversion failed", http.StatusInternalServerError)
-					}
-					return
-				}
-
-				if err := utils.ConvertDocumentReaderToPDF(
-					w,
-					r,
-					rdr,
-					bestMatch,
-					upRes.StatusCode,
-				); err != nil {
-					log.Printf("archive document→pdf conversion error: %v", err)
-					http.Error(w, "conversion failed", http.StatusInternalServerError)
-				}
-				return
-
-			case "jpg", "jpeg", "png", "tif", "tiff", "bmp", "prn", "gif", "jfif", "heic":
-				// Only images can be converted to images
-				if !isImage[origExt] {
-					http.Error(w, "source file is not an image", http.StatusBadRequest)
-					return
-				}
-
-				out, err := utils.ConvertImageReader(rdr, convertTo)
-				if err != nil {
-					log.Printf("archive image→image conversion error: %v", err)
-					http.Error(w, "conversion failed", http.StatusInternalServerError)
-					return
-				}
-				defer out.Close()
-
-				w.Header().Set("Content-Type", "image/"+convertTo)
-				fn := strings.TrimSuffix(bestMatch, filepath.Ext(bestMatch)) + "." + convertTo
-				w.Header().Set(
-					"Content-Disposition",
-					fmt.Sprintf("inline; filename*=UTF-8''%s", url.PathEscape(fn)),
-				)
-				w.WriteHeader(upRes.StatusCode)
-
-				if _, err := io.Copy(w, out); err != nil {
-					log.Printf("writing converted image failed: %v", err)
-				}
-				return
-			}
-
-			// Write status before body to avoid implicit 200
-			w.Header().Set("Cache-Control", "public, max-age=2592000, immutable")
-			w.WriteHeader(upRes.StatusCode)
-			_, err = io.Copy(w, rdr)
-			if err != nil {
-				log.Printf("writing response body error: %v", err)
-				// cannot write http.Error here as headers and status are already sent
+				log.Printf("GetFileFromRarArchive error: %v %v", err, bestMatch)
+				http.Error(w, "error extracting file from archive", http.StatusBadGateway)
 				return
 			}
 		}
+		defer rdr.Close()
 
-		if info.Extension == "rar" {
-
-			files, err := ziputil.ListFilesFromRarArchive(buf)
-			if err != nil {
-				log.Printf("ListFilesInArchive error: %v", err)
-				http.Error(w, "error listing files in archive: "+err.Error(), http.StatusBadGateway)
-				return
-			}
-			var bestMatch string
-			bestSim := 0.0
-			for _, f := range files {
-				sim := utils.Similarity(f, file)
-				if sim > bestSim {
-					bestSim = sim
-					bestMatch = f
-					log.Printf("considering file %q %v %s with similarity %.3f", f, f, f, sim)
-				}
-			}
-			if bestSim < 0.4 {
-				http.Error(w, "file not found in archive", http.StatusNotFound)
-				return
-			}
-
-			rdr, err := ziputil.GetFileFromRarArchive(buf, bestMatch)
-			if err != nil {
-				log.Printf("GetFileFromArchive 1 error: %v %v", err, bestMatch)
-				bestMatch = strings.Replace(bestMatch, "/", "\\/", 1)
-				rdr, err = ziputil.GetFileFromZipArchive(buf, bestMatch)
-				if err != nil {
-					log.Printf("GetFileFromArchive 2 error: %v %v", err, bestMatch)
-					http.Error(w, "error extracting pdf from archive", http.StatusBadGateway)
-					return
-				}
-			}
-			defer rdr.Close()
-
-			convertTo := strings.ToLower(r.URL.Query().Get("convertTo"))
-			origExt := strings.ToLower(strings.TrimPrefix(filepath.Ext(bestMatch), "."))
-
-			isImage := map[string]bool{
-				"jpg": true, "jpeg": true, "png": true, "tif": true, "tiff": true,
-				"bmp": true, "prn": true, "gif": true, "jfif": true, "heic": true,
-			}
-
-			switch convertTo {
-			case "pdf":
-				if isImage[origExt] {
-					if err := utils.ConvertImageReaderToPDF(
-						w,
-						r,
-						rdr,
-						bestMatch,
-						upRes.StatusCode,
-					); err != nil {
-						log.Printf("archive image→pdf conversion error: %v", err)
-						http.Error(w, "conversion failed", http.StatusInternalServerError)
-					}
-					return
-				}
-
-				if err := utils.ConvertDocumentReaderToPDF(
-					w,
-					r,
-					rdr,
-					bestMatch,
-					upRes.StatusCode,
-				); err != nil {
-					log.Printf("archive document→pdf conversion error: %v", err)
-					http.Error(w, "conversion failed", http.StatusInternalServerError)
-				}
-				return
-
-			case "jpg", "jpeg", "png", "tif", "tiff", "bmp", "prn", "gif", "jfif", "heic":
-				// Only images can be converted to images
-				if !isImage[origExt] {
-					http.Error(w, "source file is not an image", http.StatusBadRequest)
-					return
-				}
-
-				out, err := utils.ConvertImageReader(rdr, convertTo)
-				if err != nil {
-					log.Printf("archive image→image conversion error: %v", err)
-					http.Error(w, "conversion failed", http.StatusInternalServerError)
-					return
-				}
-				defer out.Close()
-
-				w.Header().Set("Content-Type", "image/"+convertTo)
-				fn := strings.TrimSuffix(bestMatch, filepath.Ext(bestMatch)) + "." + convertTo
-				w.Header().Set(
-					"Content-Disposition",
-					fmt.Sprintf("inline; filename*=UTF-8''%s", url.PathEscape(fn)),
-				)
-				w.WriteHeader(upRes.StatusCode)
-
-				if _, err := io.Copy(w, out); err != nil {
-					log.Printf("writing converted image failed: %v", err)
-				}
-				return
-			}
-
-			// Write status before body to avoid implicit 200
-			w.Header().Set("Cache-Control", "public, max-age=2592000, immutable")
-			w.WriteHeader(upRes.StatusCode)
-			_, err = io.Copy(w, rdr)
-			if err != nil {
-				log.Printf("writing response body error: %v", err)
-				// cannot write http.Error here as headers and status are already sent
-				return
-			}
+		if converter(w, r, upRes, rdr, bestMatch) == true {
+			return
 		}
+
+		if writeResponse(w, r, rdr, upRes) == true {
+			return
+		}
+
 	}
 
 	r.Get("/{dokId:[0-9]+}/{fileId:[0-9]+}/*", handlerArchive)
@@ -673,4 +481,109 @@ func main() {
 	defer cancel()
 	_ = srv.Shutdown(ctx)
 	log.Println("bye.")
+}
+
+func bestMatch(file string, files []string) (string, error) {
+	var bestMatch string
+	bestSim := 0.0
+	for _, f := range files {
+		sim := utils.Similarity(f, file)
+		if sim > bestSim {
+			bestSim = sim
+			bestMatch = f
+			log.Printf("considering file %q %v %s with similarity %.3f", f, f, f, sim)
+		}
+	}
+	if bestSim < 0.4 {
+		return "", errors.New("file not found in archive")
+	}
+	return bestMatch, nil
+}
+
+func converter(
+	w http.ResponseWriter,
+	r *http.Request,
+	upRes *http.Response,
+	rdr io.ReadCloser,
+	bestMatch string,
+) bool {
+	convertTo := strings.ToLower(r.URL.Query().Get("convertTo"))
+	origExt := strings.ToLower(strings.TrimPrefix(filepath.Ext(bestMatch), "."))
+
+	isImage := map[string]bool{
+		"jpg": true, "jpeg": true, "png": true, "tif": true, "tiff": true,
+		"bmp": true, "prn": true, "gif": true, "jfif": true, "heic": true,
+	}
+
+	switch convertTo {
+	case "pdf":
+		if isImage[origExt] {
+			if err := utils.ConvertImageReaderToPDF(
+				w,
+				r,
+				rdr,
+				bestMatch,
+				upRes.StatusCode,
+			); err != nil {
+				log.Printf("archive image→pdf conversion error: %v", err)
+				http.Error(w, "conversion failed", http.StatusInternalServerError)
+			}
+			return true
+		}
+
+		if err := utils.ConvertDocumentReaderToPDF(
+			w,
+			r,
+			rdr,
+			bestMatch,
+			upRes.StatusCode,
+		); err != nil {
+			log.Printf("archive document→pdf conversion error: %v", err)
+			http.Error(w, "conversion failed", http.StatusInternalServerError)
+		}
+		return true
+
+	case "jpg", "jpeg", "png", "tif", "tiff", "bmp", "prn", "gif", "jfif", "heic":
+		// Only images can be converted to images
+		if !isImage[origExt] {
+			http.Error(w, "source file is not an image", http.StatusBadRequest)
+			return true
+		}
+
+		out, err := utils.ConvertImageReader(rdr, convertTo)
+		if err != nil {
+			log.Printf("archive image→image conversion error: %v", err)
+			http.Error(w, "conversion failed", http.StatusInternalServerError)
+			return true
+		}
+		defer out.Close()
+
+		w.Header().Set("Content-Type", "image/"+convertTo)
+		fn := strings.TrimSuffix(bestMatch, filepath.Ext(bestMatch)) + "." + convertTo
+		w.Header().Set(
+			"Content-Disposition",
+			fmt.Sprintf("inline; filename*=UTF-8''%s", url.PathEscape(fn)),
+		)
+		w.WriteHeader(upRes.StatusCode)
+
+		if _, err := io.Copy(w, out); err != nil {
+			log.Printf("writing converted image failed: %v", err)
+		}
+		return true
+	}
+	return false
+}
+
+func writeResponse(w http.ResponseWriter, r *http.Request, rdr io.ReadCloser, upRes *http.Response) bool {
+	// Write status before body to avoid implicit 200
+
+	w.Header().Set("Cache-Control", "public, max-age=2592000, immutable")
+	w.WriteHeader(upRes.StatusCode)
+	_, err := io.Copy(w, rdr)
+	if err != nil {
+		log.Printf("writing response body error: %v", err)
+		// cannot write http.Error here as headers and status are already sent
+		return true
+	}
+	return false
 }

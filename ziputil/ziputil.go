@@ -42,6 +42,47 @@ func GetFileFromZipArchive(zipBytes []byte, filename string) (io.ReadCloser, err
 	return nil, fmt.Errorf("failas %q zip’e nerastas", filename)
 }
 
+func IdentityFilesV2(archiveBytes []byte) ([]string, error) {
+	format, stream, err := archives.Identify(context.TODO(), "file", bytes.NewReader(archiveBytes))
+	if err != nil {
+		return nil, fmt.Errorf("nepavyko atidaryti archyvo: %w", err)
+	}
+	extractor, ok := format.(archives.Extractor)
+	if !ok {
+		return nil, fmt.Errorf("formatas %T nepalaiko failų išskleidimo (gali būti, kad tai ne archyvas)", format)
+	}
+	var names []string
+	err = extractor.Extract(context.TODO(), stream, func(ctx context.Context, info archives.FileInfo) error {
+		names = append(names, info.Name())
+		return nil
+	})
+
+	return names, nil
+}
+
+func GetFileFromArchiveV2(archiveBytes []byte, filename string) (io.ReadCloser, error) {
+	var buf bytes.Buffer
+	format, stream, err := archives.Identify(context.TODO(), filename, bytes.NewReader(archiveBytes))
+	if err != nil {
+		return nil, fmt.Errorf("nepavyko atidaryti archyvo: %w", err)
+	}
+	extractor, ok := format.(archives.Extractor)
+	if !ok {
+		return nil, fmt.Errorf("formatas %T nepalaiko failų išskleidimo (gali būti, kad tai ne archyvas)", format)
+	}
+	err = extractor.Extract(context.TODO(), stream, func(ctx context.Context, info archives.FileInfo) error {
+		fh, err := info.Open()
+		if err != nil {
+			return fmt.Errorf("nepavyko atidaryti failo %q: %w", filename, err)
+		}
+		defer fh.Close()
+		buf.ReadFrom(fh)
+		return nil
+	})
+	return io.NopCloser(bytes.NewReader(buf.Bytes())), nil
+
+}
+
 func ListFilesFromRarArchive(archiveBytes []byte) ([]string, error) {
 	var format archives.Rar
 	var names []string
