@@ -3,12 +3,14 @@ package ziputil
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"path"
 	"strings"
 
 	"github.com/gen2brain/go-unarr"
+	"github.com/mholt/archives"
 )
 
 func ListFilesInArchive(zipBytes []byte) ([]string, error) {
@@ -38,6 +40,39 @@ func GetFileFromZipArchive(zipBytes []byte, filename string) (io.ReadCloser, err
 		}
 	}
 	return nil, fmt.Errorf("failas %q zip’e nerastas", filename)
+}
+
+func ListFilesFromRarArchive(archiveBytes []byte) ([]string, error) {
+	var format archives.Rar
+	var names []string
+	err := format.Extract(context.TODO(), bytes.NewReader(archiveBytes), func(ctx context.Context, info archives.FileInfo) error {
+		names = append(names, info.Name())
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("nepavyko atidaryti archyvo: %w", err)
+	}
+	return names, nil
+}
+
+func GetFileFromRarArchive(archiveBytes []byte, filename string) (io.ReadCloser, error) {
+	var format archives.Rar
+	var buf bytes.Buffer
+	err := format.Extract(context.TODO(), bytes.NewReader(archiveBytes), func(ctx context.Context, info archives.FileInfo) error {
+		fh, err := info.Open()
+		if err != nil {
+			return fmt.Errorf("nepavyko atidaryti failo %q: %w", filename, err)
+		}
+		defer fh.Close()
+		buf.ReadFrom(fh)
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("nepavyko atidaryti archyvo: %w", err)
+	}
+	return io.NopCloser(bytes.NewReader(buf.Bytes())), nil
 }
 
 func GetFileFromArchive(archiveBytes []byte, filename string) (io.ReadCloser, error) {
