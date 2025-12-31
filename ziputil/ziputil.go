@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"strconv"
 	"strings"
 
 	"github.com/gen2brain/go-unarr"
+	"github.com/jhillyerd/enmime"
 	"github.com/mholt/archives"
 )
 
@@ -168,4 +170,36 @@ func GetFileFromZip(zipBytes []byte, filename string) (io.ReadCloser, error) {
 	}
 
 	return nil, fmt.Errorf("failas %q zip’e nerastas", filename)
+}
+
+func ExtractEmlAttachments(in []byte, filename string, idx string) (io.ReadCloser, error) {
+	// 1. Atidarome failą
+	f := bytes.NewReader(in)
+	index, _ := strconv.Atoi(idx)
+
+	// 2. Išparsiname (Enmime padaro visą sunkų darbą)
+	env, err := enmime.ReadEnvelope(f)
+	if err != nil {
+		return nil, fmt.Errorf("klaida skaitant EML: %w", err)
+	}
+
+	// 3. Išsaugome prisegtukus
+	var buf bytes.Buffer
+	i := 0
+	for _, att := range env.Attachments {
+		if att.FileName != filename {
+			continue
+		}
+		i++
+		if i < index {
+			continue
+		}
+		// err := os.WriteFile(fullPath, att.Content, 0644)
+		buf.ReadFrom(bytes.NewReader(att.Content))
+		break
+		// if err != nil {
+		// return fmt.Errorf("nepavyko įrašyti %s: %w", att.FileName, err)
+		// }
+	}
+	return io.NopCloser(bytes.NewReader(buf.Bytes())), nil
 }

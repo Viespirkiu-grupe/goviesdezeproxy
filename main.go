@@ -419,36 +419,48 @@ func main() {
 			http.Error(w, "error reading upstream body", http.StatusBadGateway)
 			return
 		}
+		if info.Extension != "eml" {
 
-		var files []string
-		files, err = ziputil.IdentityFilesV2(buf)
-		if err != nil {
-			log.Printf("ListFilesInArchive error: %v", err)
-			http.Error(w, "error listing files in archive: "+err.Error(), http.StatusBadGateway)
-			return
-		}
-		bestMatch, err := bestMatch(file, files)
-		if err != nil {
-			http.Error(w, "file not found in archive", http.StatusNotFound)
-			return
-		}
-
-		rdr, err := ziputil.GetFileFromArchiveV2(buf, bestMatch)
-		if err != nil {
+			var files []string
+			files, err = ziputil.IdentityFilesV2(buf)
 			if err != nil {
-				log.Printf("GetFileFromRarArchive error: %v %v", err, bestMatch)
-				http.Error(w, "error extracting file from archive", http.StatusBadGateway)
+				log.Printf("ListFilesInArchive error: %v", err)
+				http.Error(w, "error listing files in archive: "+err.Error(), http.StatusBadGateway)
 				return
 			}
-		}
-		defer rdr.Close()
+			bestMatch, err := bestMatch(file, files)
+			if err != nil {
+				http.Error(w, "file not found in archive", http.StatusNotFound)
+				return
+			}
 
-		if converter(w, r, upRes, rdr, bestMatch) == true {
-			return
-		}
+			rdr, err := ziputil.GetFileFromArchiveV2(buf, bestMatch)
+			if err != nil {
+				if err != nil {
+					log.Printf("GetFileFromRarArchive error: %v %v", err, bestMatch)
+					http.Error(w, "error extracting file from archive", http.StatusBadGateway)
+					return
+				}
+			}
+			defer rdr.Close()
 
-		if writeResponse(w, r, rdr, upRes) == true {
-			return
+			if converter(w, r, upRes, rdr, bestMatch) == true {
+				return
+			}
+
+			if writeResponse(w, r, rdr, upRes) == true {
+				return
+			}
+		} else if info.Extension == "eml" {
+			rdr, err := ziputil.ExtractEmlAttachments(buf, file, r.URL.Query().Get("index"))
+			if err != nil {
+				log.Printf("ExtractEmlAttachments error: %v %v", err, file)
+				http.Error(w, "error extracting file from eml", http.StatusBadGateway)
+				return
+			}
+			defer rdr.Close()
+
+			writeResponse(w, r, rdr, upRes)
 		}
 
 	}

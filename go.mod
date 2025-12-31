@@ -19,17 +19,31 @@ require (
 	github.com/bodgit/plumbing v1.3.0 // indirect
 	github.com/bodgit/sevenzip v1.6.1 // indirect
 	github.com/bodgit/windows v1.0.1 // indirect
+	github.com/cention-sany/utf7 v0.0.0-20170124080048-26cad61bd60a // indirect
 	github.com/dsnet/compress v0.0.2-0.20230904184137-39efe44ab707 // indirect
+	github.com/gogs/chardet v0.0.0-20211120154057-b7413eaefb8f // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
+	github.com/jaytaylor/html2text v0.0.0-20230321000545-74c2419ad056 // indirect
+	github.com/jhillyerd/enmime v1.3.0 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/klauspost/pgzip v1.2.6 // indirect
+	github.com/mattn/go-runewidth v0.0.15 // indirect
 	github.com/mholt/archives v0.1.5 // indirect
 	github.com/mikelolasagasti/xz v1.0.1 // indirect
 	github.com/minio/minlz v1.0.1 // indirect
 	github.com/nwaples/rardecode/v2 v2.2.0 // indirect
+	github.com/olekukonko/tablewriter v0.0.5 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
+	github.com/richardlehane/mscfb v1.0.4 // indirect
+	github.com/richardlehane/msoleps v1.0.1 // indirect
+	github.com/rivo/uniseg v0.4.4 // indirect
+	github.com/saintfish/chardet v0.0.0-20230101081208-5e3ef4b5456d // indirect
 	github.com/sorairolake/lzip-go v0.3.8 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
+	github.com/ssor/bom v0.0.0-20170718123548-6386211fdfcf // indirect
 	github.com/ulikunitz/xz v0.5.15 // indirect
+	github.com/yuphing-ong/outlook-msg-parser v1.1.7 // indirect
 	go4.org v0.0.0-20230225012048-214862532bf5 // indirect
+	golang.org/x/net v0.30.0 // indirect
 )
