@@ -124,13 +124,16 @@ func ConvertImageReaderToPDF(
 	// Convert image to PDF using ImageMagick
 	cmd := exec.Command(
 		"convert",
+    		"-limit", "memory", "500MB",
+    		"-limit", "map", "1GB",
+                "-limit", "thread", "8",
 		tmpIn.Name(),
 		"-units", "PixelsPerInch",
 		"-density", "300",
-		"-resize", "2480x3508", // scale up or down, preserve aspect
-		"-gravity", "center",
+		"-resize", "2480x3508",
 		"-background", "white",
 		"-extent", "2480x3508",
+		"-compress", "Zip",
 		pdfPath,
 	)
 	output, err := cmd.CombinedOutput()

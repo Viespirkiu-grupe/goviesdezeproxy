@@ -34,7 +34,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=builder /temp/app /app
 
-RUN sed -i 's/rights="none" pattern="PDF"/rights="read|write" pattern="PDF"/' \
-    /etc/ImageMagick-6/policy.xml
+RUN mv /etc/ImageMagick-6/policy.xml /etc/ImageMagick-6/policy.xml.bak
 
 ENTRYPOINT ["/app"]
