@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
 	"path"
 	"strconv"
 	"strings"
@@ -191,7 +193,7 @@ func ExtractEmlAttachments(in []byte, filename string, idx string) (io.ReadClose
 			continue
 		}
 		i++
-		if i < index {
+		if i < index && index != 0 {
 			continue
 		}
 		// err := os.WriteFile(fullPath, att.Content, 0644)
@@ -202,4 +204,35 @@ func ExtractEmlAttachments(in []byte, filename string, idx string) (io.ReadClose
 		// }
 	}
 	return io.NopCloser(bytes.NewReader(buf.Bytes())), nil
+}
+
+func ConvertMsgToEml(in []byte) ([]byte, error) {
+	file := bytes.NewReader(in)
+	_ = file
+
+	tmpFileName, _ := os.CreateTemp("", "msg-*.msg")
+	defer os.Remove(tmpFileName.Name())
+	// log.Printf("Laikinas MSG failas: %s", tmpFileName.Name())
+	os.WriteFile(tmpFileName.Name(), in, 0755)
+
+	cmd := exec.Command("msgconvert", "--outfile", "-", tmpFileName.Name())
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
+	go func() {
+		io.Copy(os.Stderr, stderr)
+	}()
+	var buf bytes.Buffer
+	go func() {
+		io.Copy(&buf, stdout)
+	}()
+	err := cmd.Start()
+	if err != nil {
+		return nil, fmt.Errorf("nepavyko konvertuoti MSG į EML: %w", err)
+	}
+	err = cmd.Wait()
+	if err != nil {
+		return nil, fmt.Errorf("nepavyko konvertuoti MSG į EML: %w", err)
+	}
+
+	return buf.Bytes(), nil
 }

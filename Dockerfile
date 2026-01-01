@@ -30,6 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-noto \
     libheif-dev \
     imagemagick \
+    libemail-outlook-message-perl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /temp/app /app

@@ -419,7 +419,7 @@ func main() {
 			http.Error(w, "error reading upstream body", http.StatusBadGateway)
 			return
 		}
-		if info.Extension != "eml" {
+		if info.Extension != "eml" && info.Extension != "msg" {
 
 			var files []string
 			files, err = ziputil.IdentityFilesV2(buf)
@@ -460,6 +460,22 @@ func main() {
 			}
 			defer rdr.Close()
 
+			writeResponse(w, r, rdr, upRes)
+		} else if info.Extension == "msg" {
+			eml, err := ziputil.ConvertMsgToEml(buf)
+			if err != nil {
+				log.Printf("ConvertMsgToEml error: %v", err)
+				http.Error(w, "error converting msg to eml", http.StatusBadGateway)
+				return
+			}
+
+			rdr, err := ziputil.ExtractEmlAttachments(eml, file, r.URL.Query().Get("index"))
+			if err != nil {
+				log.Printf("ExtractMsgAttachments error: %v %v", err, file)
+				http.Error(w, "error extracting file from msg", http.StatusBadGateway)
+				return
+			}
+			defer rdr.Close()
 			writeResponse(w, r, rdr, upRes)
 		}
 
