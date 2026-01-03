@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -61,7 +62,7 @@ func ConvertDocumentReaderToPDF(
 
 	ctx, cancel := context.WithTimeout(r.Context(), getTimeout())
 	defer cancel()
-
+	var mu atomic.Bool
 	outDir := os.TempDir()
 	cmd := exec.CommandContext(
 		ctx,
@@ -79,14 +80,17 @@ func ConvertDocumentReaderToPDF(
 
 	go func() {
 		<-ctx.Done()
-		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to kill process: %v\n", err)
+		if mu.Load() == false {
+			if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
+				fmt.Fprintf(os.Stderr, "failed to kill process: %v\n", err)
+			}
 		}
 	}()
 
 	if err := cmd.Wait(); err != nil {
 		return fmt.Errorf("libreoffice process error: %w", err)
 	}
+	mu.Store(true)
 	// output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("libreoffice failed: %w: %s", err, output)
