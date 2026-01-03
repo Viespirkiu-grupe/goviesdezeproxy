@@ -93,7 +93,7 @@ func ConvertDocumentReaderToPDF(
 	mu.Store(true)
 	// output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("libreoffice failed: %w: %s", err, output)
+		return fmt.Errorf("libreoffice failed: %w", err)
 	}
 
 	pdfPath := filepath.Join(
