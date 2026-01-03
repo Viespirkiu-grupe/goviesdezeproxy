@@ -72,6 +72,12 @@ func ConvertDocumentReaderToPDF(
 		tmpIn.Name(),
 	)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	go func() {
+		<-ctx.Done()
+		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to kill process: %v\n", err)
+		}
+	}()
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("libreoffice failed: %w: %s", err, output)
@@ -213,6 +219,7 @@ func ConvertImageReader(src io.Reader, targetFormat string) (io.ReadCloser, erro
 
 	// Use ImageMagick to convert
 	cmd := exec.CommandContext(ctx, "convert", tmpIn.Name(), tmpOut.Name())
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		os.Remove(tmpOut.Name())
