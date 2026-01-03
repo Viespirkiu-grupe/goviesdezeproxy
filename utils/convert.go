@@ -74,6 +74,18 @@ func ConvertDocumentReaderToPDF(
 	)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("failed to get stderr pipe: %w", err)
+	}
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to get stdout pipe: %w", err)
+	}
+	go io.Copy(os.Stdout, stdout)
+	go io.Copy(os.Stderr, stderr)
+
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start libreoffice: %w", err)
 	}
