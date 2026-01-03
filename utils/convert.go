@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/Viespirkiu-grupe/goviesdezeproxy/pkg/sconv"
 )
@@ -44,15 +46,18 @@ func ConvertDocumentReaderToPDF(
 	}
 	tmpIn.Close()
 
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	outDir := os.TempDir()
-	cmd := exec.Command(
+	cmd := exec.CommandContext(
+		ctx,
 		"libreoffice",
 		"--headless",
 		"--convert-to", "pdf",
 		"--outdir", outDir,
 		tmpIn.Name(),
 	)
-
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("libreoffice failed: %w: %s", err, output)
@@ -121,8 +126,12 @@ func ConvertImageReaderToPDF(
 	baseName := strings.TrimSuffix(filepath.Base(tmpIn.Name()), filepath.Ext(tmpIn.Name()))
 	pdfPath := filepath.Join(tmpOutDir, baseName+".pdf")
 
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	// Convert image to PDF using ImageMagick
-	cmd := exec.Command(
+	cmd := exec.CommandContext(
+		ctx,
 		"convert",
     		"-limit", "memory", "500MB",
     		"-limit", "map", "1GB",
@@ -184,8 +193,11 @@ func ConvertImageReader(src io.Reader, targetFormat string) (io.ReadCloser, erro
 	}
 	tmpOut.Close() // will be written by magick
 
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	// Use ImageMagick to convert
-	cmd := exec.Command("convert", tmpIn.Name(), tmpOut.Name())
+	cmd := exec.CommandContext(ctx, "convert", tmpIn.Name(), tmpOut.Name())
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		os.Remove(tmpOut.Name())
