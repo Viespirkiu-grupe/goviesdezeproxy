@@ -78,23 +78,18 @@ func ConvertDocumentReaderToPDF(
 		return fmt.Errorf("failed to start libreoffice: %w", err)
 	}
 
-	go func() {
-		<-ctx.Done()
+	cmd.Cancel = func() error {
 		if mu.Load() == false {
-			if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
-				fmt.Fprintf(os.Stderr, "failed to kill process: %v\n", err)
-			}
+			return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		}
-	}()
+		return nil
+	}
 
 	if err := cmd.Wait(); err != nil {
+		mu.Store(true)
 		return fmt.Errorf("libreoffice process error: %w", err)
 	}
 	mu.Store(true)
-	// output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("libreoffice failed: %w", err)
-	}
 
 	pdfPath := filepath.Join(
 		outDir,
