@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/Viespirkiu-grupe/goviesdezeproxy/pkg/sconv"
@@ -70,6 +71,7 @@ func ConvertDocumentReaderToPDF(
 		"--outdir", outDir,
 		tmpIn.Name(),
 	)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("libreoffice failed: %w: %s", err, output)
@@ -157,6 +159,7 @@ func ConvertImageReaderToPDF(
 		"-compress", "Zip",
 		pdfPath,
 	)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("ImageMagick conversion failed: %w: %s", err, output)
