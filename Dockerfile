@@ -31,6 +31,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libheif-dev \
     imagemagick \
     libemail-outlook-message-perl \
+    default-jre libreoffice-java-common \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /temp/app /app
