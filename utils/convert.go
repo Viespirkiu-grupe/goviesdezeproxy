@@ -58,7 +58,7 @@ func ConvertDocumentReaderToPDF(
 	}
 	tmpIn.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), getTimeout())
+	ctx, cancel := context.WithTimeout(r.Context(), getTimeout())
 	defer cancel()
 
 	outDir := os.TempDir()
@@ -138,7 +138,7 @@ func ConvertImageReaderToPDF(
 	baseName := strings.TrimSuffix(filepath.Base(tmpIn.Name()), filepath.Ext(tmpIn.Name()))
 	pdfPath := filepath.Join(tmpOutDir, baseName+".pdf")
 
-	ctx, cancel := context.WithTimeout(context.Background(), getTimeout())
+	ctx, cancel := context.WithTimeout(r.Context(), getTimeout())
 	defer cancel()
 
 	// Convert image to PDF using ImageMagick
