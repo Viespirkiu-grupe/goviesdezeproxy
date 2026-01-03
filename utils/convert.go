@@ -72,13 +72,22 @@ func ConvertDocumentReaderToPDF(
 		tmpIn.Name(),
 	)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start libreoffice: %w", err)
+	}
+
 	go func() {
 		<-ctx.Done()
 		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to kill process: %v\n", err)
 		}
 	}()
-	output, err := cmd.CombinedOutput()
+
+	if err := cmd.Wait(); err != nil {
+		return fmt.Errorf("libreoffice process error: %w", err)
+	}
+	// output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("libreoffice failed: %w: %s", err, output)
 	}
