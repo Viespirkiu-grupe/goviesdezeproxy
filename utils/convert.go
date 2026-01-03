@@ -15,6 +15,18 @@ import (
 	"github.com/Viespirkiu-grupe/goviesdezeproxy/pkg/sconv"
 )
 
+func getTimeout() time.Duration {
+	timeoutStr := os.Getenv("PDF_CONVERT_TIMEOUT")
+	if timeoutStr == "" {
+		return 30 * time.Second
+	}
+	timeoutInt := sconv.String(timeoutStr).Int()
+	if timeoutInt <= 0 {
+		return 30 * time.Second
+	}
+	return time.Duration(timeoutInt) * time.Second
+}
+
 func workersCount() int {
 	count := sconv.String(os.Getenv("PDF_WORKERS_DOC_COUNT")).Int()
 	if count == 0 {
@@ -46,7 +58,7 @@ func ConvertDocumentReaderToPDF(
 	}
 	tmpIn.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), getTimeout())
 	defer cancel()
 
 	outDir := os.TempDir()
@@ -126,16 +138,16 @@ func ConvertImageReaderToPDF(
 	baseName := strings.TrimSuffix(filepath.Base(tmpIn.Name()), filepath.Ext(tmpIn.Name()))
 	pdfPath := filepath.Join(tmpOutDir, baseName+".pdf")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), getTimeout())
 	defer cancel()
 
 	// Convert image to PDF using ImageMagick
 	cmd := exec.CommandContext(
 		ctx,
 		"convert",
-    		"-limit", "memory", "500MB",
-    		"-limit", "map", "1GB",
-                "-limit", "thread", "8",
+		"-limit", "memory", "500MB",
+		"-limit", "map", "1GB",
+		"-limit", "thread", "8",
 		tmpIn.Name(),
 		"-units", "PixelsPerInch",
 		"-density", "300",
@@ -193,7 +205,7 @@ func ConvertImageReader(src io.Reader, targetFormat string) (io.ReadCloser, erro
 	}
 	tmpOut.Close() // will be written by magick
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), getTimeout())
 	defer cancel()
 
 	// Use ImageMagick to convert
