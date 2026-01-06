@@ -57,6 +57,9 @@ func IdentityFilesV2(archiveBytes []byte) ([]string, error) {
 	}
 	var names []string
 	err = extractor.Extract(context.TODO(), stream, func(ctx context.Context, info archives.FileInfo) error {
+		if info.IsDir() {
+			return nil
+		}
 		names = append(names, info.Name())
 		return nil
 	})
@@ -75,6 +78,9 @@ func GetFileFromArchiveV2(archiveBytes []byte, filename string) (io.ReadCloser, 
 		return nil, fmt.Errorf("formatas %T nepalaiko failų išskleidimo (gali būti, kad tai ne archyvas)", format)
 	}
 	err = extractor.Extract(context.TODO(), stream, func(ctx context.Context, info archives.FileInfo) error {
+		if info.IsDir() {
+			return nil
+		}
 		fh, err := info.Open()
 		if err != nil {
 			return fmt.Errorf("nepavyko atidaryti failo %q: %w", filename, err)
