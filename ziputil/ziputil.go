@@ -81,11 +81,13 @@ func GetFileFromArchiveV2(archiveBytes []byte, filename string) (io.ReadCloser, 
 	if !ok {
 		return nil, fmt.Errorf("formatas %T nepalaiko failų išskleidimo (gali būti, kad tai ne archyvas)", format)
 	}
+	dir := ""
 	err = extractor.Extract(context.TODO(), stream, func(ctx context.Context, info archives.FileInfo) error {
 		if info.IsDir() {
+			dir = info.Name()
 			return nil
 		}
-		if info.Name() != filename {
+		if filepath.Join(dir, info.Name()) != filename {
 			return nil
 		}
 		fh, err := info.Open()
