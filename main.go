@@ -517,7 +517,7 @@ func bestMatch(file string, files []string) (string, error) {
 	bestSim := 0.0
 	for _, f := range files {
 		sim := utils.Similarity(f, file)
-		if sim > bestSim {
+		if sim > bestSim || strings.ToLower(f) == strings.ToLower(file) {
 			bestSim = sim
 			bestMatch = f
 			log.Printf("considering file %q %v %s with similarity %.3f", f, f, f, sim)
