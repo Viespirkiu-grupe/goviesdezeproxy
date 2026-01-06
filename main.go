@@ -428,12 +428,13 @@ func main() {
 				http.Error(w, "error listing files in archive: "+err.Error(), http.StatusBadGateway)
 				return
 			}
+			log.Printf("Files from archive: %+v", files)
 			bestMatch, err := bestMatch(file, files)
 			if err != nil {
 				http.Error(w, "file not found in archive", http.StatusNotFound)
 				return
 			}
-
+			log.Printf("Best match: %+v", bestMatch)
 			rdr, err := ziputil.GetFileFromArchiveV2(buf, bestMatch)
 			if err != nil {
 				if err != nil {
