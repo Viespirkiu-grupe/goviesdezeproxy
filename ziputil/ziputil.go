@@ -85,6 +85,9 @@ func GetFileFromArchiveV2(archiveBytes []byte, filename string) (io.ReadCloser, 
 		if info.IsDir() {
 			return nil
 		}
+		if info.Name() != filename {
+			return nil
+		}
 		fh, err := info.Open()
 		if err != nil {
 			return fmt.Errorf("nepavyko atidaryti failo %q: %w", filename, err)
