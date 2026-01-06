@@ -9,23 +9,25 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 
-	"github.com/gen2brain/go-unarr"
+	// "github.com/gen2brain/go-unarr"
+	// "github.com/gen2brain/go-unarr"
 	"github.com/jhillyerd/enmime"
 	"github.com/mholt/archives"
 )
 
-func ListFilesInArchive(zipBytes []byte) ([]string, error) {
-	a, err := unarr.NewArchiveFromMemory(zipBytes)
-	if err != nil {
-		return nil, fmt.Errorf("nepavyko atidaryti archyvo: %w", err)
-	}
-	defer a.Close()
+// func ListFilesInArchive(zipBytes []byte) ([]string, error) {
+// 	a, err := unarr.NewArchiveFromMemory(zipBytes)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("nepavyko atidaryti archyvo: %w", err)
+// 	}
+// 	defer a.Close()
 
-	return a.List()
-}
+// 	return a.List()
+// }
 
 func GetFileFromZipArchive(zipBytes []byte, filename string) (io.ReadCloser, error) {
 	rdr := bytes.NewReader(zipBytes)
@@ -56,11 +58,13 @@ func IdentityFilesV2(archiveBytes []byte) ([]string, error) {
 		return nil, fmt.Errorf("formatas %T nepalaiko failų išskleidimo (gali būti, kad tai ne archyvas)", format)
 	}
 	var names []string
+	dir := ""
 	err = extractor.Extract(context.TODO(), stream, func(ctx context.Context, info archives.FileInfo) error {
 		if info.IsDir() {
+			dir = info.Name()
 			return nil
 		}
-		names = append(names, info.Name())
+		names = append(names, filepath.Join(dir, info.Name()))
 		return nil
 	})
 
@@ -126,31 +130,31 @@ func GetFileFromRarArchive(archiveBytes []byte, filename string) (io.ReadCloser,
 	return io.NopCloser(bytes.NewReader(buf.Bytes())), nil
 }
 
-func GetFileFromArchive(archiveBytes []byte, filename string) (io.ReadCloser, error) {
-	a, err := unarr.NewArchiveFromMemory(archiveBytes)
-	if err != nil {
-		return nil, fmt.Errorf("nepavyko atidaryti archyvo: %w", err)
-	}
+// func GetFileFromArchive(archiveBytes []byte, filename string) (io.ReadCloser, error) {
+// 	a, err := unarr.NewArchiveFromMemory(archiveBytes)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("nepavyko atidaryti archyvo: %w", err)
+// 	}
 
-	defer func() {
-		if err != nil {
-			a.Close()
-		}
-	}()
+// 	defer func() {
+// 		if err != nil {
+// 			a.Close()
+// 		}
+// 	}()
 
-	err = a.EntryFor(filename)
-	if err != nil {
-		return nil, fmt.Errorf("failas %q nerastas archyve: %w", filename, err)
-	}
-	defer a.Close()
+// 	err = a.EntryFor(filename)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failas %q nerastas archyve: %w", filename, err)
+// 	}
+// 	defer a.Close()
 
-	b, err := a.ReadAll()
-	if err != nil {
-		return nil, fmt.Errorf("nepavyko nuskaityti failo %q: %w", filename, err)
-	}
+// 	b, err := a.ReadAll()
+// 	if err != nil {
+// 		return nil, fmt.Errorf("nepavyko nuskaityti failo %q: %w", filename, err)
+// 	}
 
-	return io.NopCloser(bytes.NewReader(b)), nil
-}
+// 	return io.NopCloser(bytes.NewReader(b)), nil
+// }
 
 // GetFileFromZip suranda faile esantį įrašą pagal filename ir grąžina jo turinį kaip io.ReadCloser.
 // filename lyginamas pagal basename (pvz. "failas.pdf" ras "dir/sub/failas.pdf").
