@@ -28,6 +28,7 @@ import (
 type ProxyInfo struct {
 	FileURL       string            `json:"fileUrl"`
 	Extension     string            `json:"extension"`
+	Extract       string            `json:"extract"`
 	Headers       map[string]string `json:"headers"`
 	ContentType   string            `json:"contentType"`
 	ContentLength int               `json:"contentLength"`
@@ -77,16 +78,16 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.StripSlashes)
 
-	handler := func(w http.ResponseWriter, r *http.Request) {
-		// Build requestedId from path params
+	handlerArchive := func(w http.ResponseWriter, r *http.Request) {
+		// -------- Resolve requestedID --------
 		id := chi.URLParam(r, "id")
 		dokId := chi.URLParam(r, "dokId")
 		fileId := chi.URLParam(r, "fileId")
+		pathFile := chi.URLParam(r, "*")
 
 		var requestedID string
 		switch {
 		case dokId != "" && fileId != "":
-			// mirror Number() coercion from Node: drop non-digits safely
 			if _, err := strconv.Atoi(dokId); err != nil {
 				http.Error(w, "dokId must be a number", http.StatusBadRequest)
 				return
@@ -97,9 +98,7 @@ func main() {
 			}
 			requestedID = dokId + "/" + fileId
 		case id != "":
-			matchedNumber := regexp.MustCompile(`^\d+$`).MatchString(id)
-			matchedMD5 := regexp.MustCompile(`^[a-fA-F0-9]{32}$`).MatchString(id)
-			if !matchedNumber && !matchedMD5 {
+			if !regexp.MustCompile(`^\d+$|^[a-fA-F0-9]{32}$`).MatchString(id) {
 				http.Error(w, "id must be a number or MD5", http.StatusBadRequest)
 				return
 			}
@@ -109,9 +108,10 @@ func main() {
 			return
 		}
 
-		// Step 1: Ask main server for proxy info
+		// -------- Fetch proxy info --------
 		infoURL := *baseURL
-		infoURL.Path = strings.TrimRight(baseURL.Path, "/") + "/failas/" + requestedID + "/downloadProxyInformation"
+		infoURL.Path = strings.TrimRight(baseURL.Path, "/") +
+			"/failas/" + requestedID + "/downloadProxyInformation"
 
 		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, infoURL.String(), nil)
 		if err != nil {
@@ -122,11 +122,9 @@ func main() {
 
 		infoRes, err := client.Do(req)
 		if err != nil {
-			// could be context cancellation if client disconnected
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			if errors.Is(err, context.Canceled) {
 				return
 			}
-			log.Printf("info request error: %v", err)
 			http.Error(w, "failed to fetch proxy info", http.StatusBadGateway)
 			return
 		}
@@ -134,34 +132,32 @@ func main() {
 
 		if infoRes.StatusCode < 200 || infoRes.StatusCode >= 300 {
 			w.WriteHeader(infoRes.StatusCode)
-			_, _ = io.Copy(w, infoRes.Body)
+			io.Copy(w, infoRes.Body)
 			return
 		}
 
 		var info ProxyInfo
 		if err := json.NewDecoder(infoRes.Body).Decode(&info); err != nil {
-			log.Printf("info json decode error: %v", err)
 			http.Error(w, "invalid proxy info json", http.StatusBadGateway)
 			return
 		}
+
 		if info.FileURL == "" {
 			http.Error(w, "proxy info missing fileUrl", http.StatusBadGateway)
 			return
 		}
 
-		// Step 2: Request actual file (streaming, no buffering)
+		// -------- Fetch upstream file --------
 		upReq, err := http.NewRequestWithContext(r.Context(), http.MethodGet, info.FileURL, nil)
 		if err != nil {
 			http.Error(w, "failed to build upstream request", http.StatusInternalServerError)
 			return
 		}
 
-		//Pass-through only safe request headers from info.Headers
 		for k, v := range info.Headers {
-			// skip hop-by-hop / unsafe headers just in case
-			kk := strings.ToLower(k)
-			switch kk {
-			case "connection", "proxy-connection", "keep-alive", "transfer-encoding", "upgrade", "te", "trailer":
+			switch strings.ToLower(k) {
+			case "connection", "proxy-connection", "keep-alive",
+				"transfer-encoding", "upgrade", "te", "trailer":
 				continue
 			default:
 				upReq.Header.Set(k, v)
@@ -170,10 +166,9 @@ func main() {
 
 		upRes, err := client.Do(upReq)
 		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			if errors.Is(err, context.Canceled) {
 				return
 			}
-			log.Printf("file request error: %v", err)
 			http.Error(w, "failed to fetch file", http.StatusBadGateway)
 			return
 		}
@@ -181,312 +176,88 @@ func main() {
 
 		if upRes.StatusCode < 200 || upRes.StatusCode >= 300 {
 			w.WriteHeader(upRes.StatusCode)
-			_, _ = io.Copy(w, upRes.Body)
+			io.Copy(w, upRes.Body)
 			return
 		}
 
-		convertTo := strings.ToLower(r.URL.Query().Get("convertTo"))
-		origExt := strings.ToLower(info.Extension)
+		var rdr io.ReadCloser
+		var name string
 
-		isImage := map[string]bool{
-			"jpg": true, "jpeg": true, "png": true, "tif": true, "tiff": true,
-			"bmp": true, "prn": true, "gif": true, "jfif": true, "heic": true,
-			"avif": true, "webp": true,
+		target := info.Extract
+		if target == "" {
+			target = pathFile
 		}
 
-		switch convertTo {
-		case "pdf":
-			// If original is already an image, use image→PDF
-			if isImage[origExt] {
-				if err := utils.ConvertImageReaderToPDF(
-					w,
-					r,
-					upRes.Body,
-					info.FileName,
-					upRes.StatusCode,
-				); err != nil {
-					log.Printf("image→pdf conversion error: %v", err)
-					http.Error(w, "conversion failed", http.StatusInternalServerError)
-				}
-				return
-			}
-
-			// Otherwise use document→PDF
-			if err := utils.ConvertDocumentReaderToPDF(
-				w,
-				r,
-				upRes.Body,
-				info.FileName,
-				upRes.StatusCode,
-			); err != nil {
-				log.Printf("pdf conversion error: %v", err)
-				http.Error(w, "conversion failed", http.StatusInternalServerError)
-			}
-			return
-
-		case "jpg", "jpeg", "png", "tif", "tiff", "bmp", "prn", "gif", "jfif", "heic", "avif", "webp":
-			out, err := utils.ConvertImageReader(upRes.Body, convertTo)
+		if target == "" {
+			// No extraction needed, stream raw file
+			rdr = upRes.Body
+			name = info.FileName
+		} else {
+			// Extraction required
+			buf, err := io.ReadAll(upRes.Body)
 			if err != nil {
-				log.Printf("image conversion error: %v", err)
-				http.Error(w, "conversion failed", http.StatusInternalServerError)
+				http.Error(w, "error reading upstream body", http.StatusBadGateway)
 				return
 			}
-			defer out.Close()
-			// w eina i browseri .
-			w.Header().Set("Content-Type", "image/"+convertTo)
-			if info.FileName != "" {
-				fn := strings.TrimSuffix(info.FileName, filepath.Ext(info.FileName)) + "." + convertTo
-				w.Header().Set(
-					"Content-Disposition",
-					fmt.Sprintf("inline; filename*=UTF-8''%s", url.PathEscape(fn)),
-				)
-			}
-			w.WriteHeader(upRes.StatusCode)
-			if _, err := io.Copy(w, out); err != nil {
-				log.Printf("writing converted image failed: %v", err)
-			}
-			return
-		}
 
-		// Step 3: Forward headers
-
-		if disp := upRes.Header.Get("Content-Disposition"); disp != "" && info.FileName == "" {
-			w.Header().Set("Content-Disposition", disp)
-		}
-		if info.FileName != "" {
-			// inline; filename*=UTF-8''... covers unicode safely
-			fnStar := url.PathEscape(info.FileName)
-			w.Header().Set("Content-Disposition",
-				fmt.Sprintf("inline; filename*=UTF-8''%s", fnStar))
-		}
-
-		// Also forward byte ranges if upstream provided
-		if rng := upRes.Header.Get("Accept-Ranges"); rng != "" {
-			w.Header().Set("Accept-Ranges", rng)
-		}
-		if cr := upRes.Header.Get("Content-Range"); cr != "" {
-			w.Header().Set("Content-Range", cr)
-		}
-
-		// Write status before body to avoid implicit 200
-		w.Header().Set("Content-Type", info.ContentType)
-
-		// Cache-Control "public, max-age=2592000, immutable" always;
-		w.Header().Set("Cache-Control", "public, max-age=2592000, immutable")
-		w.WriteHeader(upRes.StatusCode)
-
-		io.Copy(w, upRes.Body)
-	}
-
-	handlerArchive := func(w http.ResponseWriter, r *http.Request) {
-		// Build requestedId from path params
-		id := chi.URLParam(r, "id")
-		dokId := chi.URLParam(r, "dokId")
-		fileId := chi.URLParam(r, "fileId")
-		file := chi.URLParam(r, "*")
-
-		var requestedID string
-		switch {
-		case dokId != "" && fileId != "":
-			// mirror Number() coercion from Node: drop non-digits safely
-			if _, err := strconv.Atoi(dokId); err != nil {
-				http.Error(w, "dokId must be a number", http.StatusBadRequest)
-				return
-			}
-			if _, err := strconv.Atoi(fileId); err != nil {
-				http.Error(w, "fileId must be a number", http.StatusBadRequest)
-				return
-			}
-			requestedID = dokId + "/" + fileId
-		case id != "":
-			matchedNumber := regexp.MustCompile(`^\d+$`).MatchString(id)
-			matchedMD5 := regexp.MustCompile(`^[a-fA-F0-9]{32}$`).MatchString(id)
-			if !matchedNumber && !matchedMD5 {
-				http.Error(w, "id must be a number or MD5", http.StatusBadRequest)
-				return
-			}
-			requestedID = id
-		default:
-			http.NotFound(w, r)
-			return
-		}
-
-		if file == "" {
-			http.Error(w, "file must end with .pdf", http.StatusBadRequest)
-			return
-		}
-
-		// Step 1: Ask main server for proxy info
-		infoURL := *baseURL
-		infoURL.Path = strings.TrimRight(baseURL.Path, "/") + "/failas/" + requestedID + "/downloadProxyInformation"
-
-		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, infoURL.String(), nil)
-		if err != nil {
-			http.Error(w, "failed to build request", http.StatusInternalServerError)
-			return
-		}
-		req.Header.Set("Authorization", "Bearer "+apiKey)
-
-		infoRes, err := client.Do(req)
-		if err != nil {
-			// could be context cancellation if client disconnected
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return
-			}
-			log.Printf("info request error: %v", err)
-			http.Error(w, "failed to fetch proxy info", http.StatusBadGateway)
-			return
-		}
-		defer infoRes.Body.Close()
-
-		if infoRes.StatusCode < 200 || infoRes.StatusCode >= 300 {
-			w.WriteHeader(infoRes.StatusCode)
-			_, _ = io.Copy(w, infoRes.Body)
-			return
-		}
-
-		var info ProxyInfo
-		if err := json.NewDecoder(infoRes.Body).Decode(&info); err != nil {
-			log.Printf("info json decode error: %v", err)
-			http.Error(w, "invalid proxy info json", http.StatusBadGateway)
-			return
-		}
-		if info.FileURL == "" {
-			http.Error(w, "proxy info missing fileUrl", http.StatusBadGateway)
-			return
-		}
-
-		fileURL := info.FileURL
-
-		// Step 2: Request actual file (streaming, no buffering)
-		upReq, err := http.NewRequestWithContext(r.Context(), http.MethodGet, fileURL, nil)
-		if err != nil {
-			http.Error(w, "failed to build upstream request", http.StatusInternalServerError)
-			return
-		}
-		// Pass-through only safe request headers from info.Headers
-		for k, v := range info.Headers {
-			// skip hop-by-hop / unsafe headers just in case
-			kk := strings.ToLower(k)
-			switch kk {
-			case "connection", "proxy-connection", "keep-alive", "transfer-encoding", "upgrade", "te", "trailer":
-				continue
-			default:
-				upReq.Header.Set(k, v)
-			}
-		}
-
-		upRes, err := client.Do(upReq)
-		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return
-			}
-			log.Printf("file request error: %v", err)
-			http.Error(w, "failed to fetch file", http.StatusBadGateway)
-			return
-		}
-		defer upRes.Body.Close()
-
-		if upRes.StatusCode < 200 || upRes.StatusCode >= 300 {
-			w.WriteHeader(upRes.StatusCode)
-			_, _ = io.Copy(w, upRes.Body)
-			return
-		}
-
-		// Step 3: Forward headers
-
-		if disp := upRes.Header.Get("Content-Disposition"); disp != "" && info.FileName == "" {
-			w.Header().Set("Content-Disposition", disp)
-		}
-		if info.FileName != "" {
-			// inline; filename*=UTF-8''... covers unicode safely
-			fnStar := filepath.Base(url.PathEscape(file))
-			w.Header().Set("Content-Disposition",
-				fmt.Sprintf("inline; filename*=UTF-8''%s", fnStar))
-		}
-
-		// Also forward byte ranges if upstream provided
-		if rng := upRes.Header.Get("Accept-Ranges"); rng != "" {
-			w.Header().Set("Accept-Ranges", rng)
-		}
-		if cr := upRes.Header.Get("Content-Range"); cr != "" {
-			w.Header().Set("Content-Range", cr)
-		}
-
-		buf, err := io.ReadAll(upRes.Body)
-		if err != nil {
-			log.Printf("reading upstream body error: %v", err)
-			http.Error(w, "error reading upstream body", http.StatusBadGateway)
-			return
-		}
-		if info.Extension != "eml" && info.Extension != "msg" {
-
-			var files []string
-			files, err = ziputil.IdentityFilesV2(buf)
-			if err != nil {
-				log.Printf("ListFilesInArchive error: %v", err)
-				http.Error(w, "error listing files in archive: "+err.Error(), http.StatusBadGateway)
-				return
-			}
-			log.Printf("Files from archive: %+v", files)
-			bestMatch, err := bestMatch(file, files)
-			if err != nil {
-				http.Error(w, "file not found in archive", http.StatusNotFound)
-				return
-			}
-			log.Printf("Best match: %+v", bestMatch)
-			rdr, err := ziputil.GetFileFromArchiveV2(buf, bestMatch)
-			if err != nil {
+			switch info.Extension {
+			case "eml":
+				rdr, err = ziputil.ExtractEmlAttachments(buf, target, r.URL.Query().Get("index"))
 				if err != nil {
-					log.Printf("GetFileFromRarArchive error: %v %v", err, bestMatch)
-					http.Error(w, "error extracting file from archive", http.StatusBadGateway)
+					http.Error(w, "error extracting eml attachment", http.StatusBadGateway)
 					return
 				}
-			}
-			defer rdr.Close()
+				name = target
 
-			if converter(w, r, upRes, rdr, bestMatch) == true {
-				return
-			}
+			case "msg":
+				eml, err := ziputil.ConvertMsgToEml(buf)
+				if err != nil {
+					http.Error(w, "error converting msg", http.StatusBadGateway)
+					return
+				}
+				rdr, err = ziputil.ExtractEmlAttachments(eml, target, r.URL.Query().Get("index"))
+				if err != nil {
+					http.Error(w, "error extracting msg attachment", http.StatusBadGateway)
+					return
+				}
+				name = target
 
-			if writeResponse(w, r, rdr, upRes) == true {
-				return
-			}
-		} else if info.Extension == "eml" {
-			rdr, err := ziputil.ExtractEmlAttachments(buf, file, r.URL.Query().Get("index"))
-			if err != nil {
-				log.Printf("ExtractEmlAttachments error: %v %v", err, file)
-				http.Error(w, "error extracting file from eml", http.StatusBadGateway)
-				return
-			}
-			defer rdr.Close()
+			default: // normal archive (zip/rar/tar)
+				files, err := ziputil.IdentityFilesV2(buf)
+				if err != nil {
+					http.Error(w, "invalid archive", http.StatusBadGateway)
+					return
+				}
 
-			writeResponse(w, r, rdr, upRes)
-		} else if info.Extension == "msg" {
-			eml, err := ziputil.ConvertMsgToEml(buf)
-			if err != nil {
-				log.Printf("ConvertMsgToEml error: %v", err)
-				http.Error(w, "error converting msg to eml", http.StatusBadGateway)
-				return
-			}
+				best, err := bestMatch(target, files)
+				if err != nil {
+					http.Error(w, "file not found in archive", http.StatusNotFound)
+					return
+				}
 
-			rdr, err := ziputil.ExtractEmlAttachments(eml, file, r.URL.Query().Get("index"))
-			if err != nil {
-				log.Printf("ExtractMsgAttachments error: %v %v", err, file)
-				http.Error(w, "error extracting file from msg", http.StatusBadGateway)
-				return
+				rdr, err = ziputil.GetFileFromArchiveV2(buf, best)
+				if err != nil {
+					http.Error(w, "error extracting file", http.StatusBadGateway)
+					return
+				}
+				name = best
 			}
-			defer rdr.Close()
-			writeResponse(w, r, rdr, upRes)
 		}
+
+		// Always serve the **extracted file**
+		if converter(w, r, upRes, rdr, name) {
+			return
+		}
+
+		writeResponse(w, r, rdr, upRes, name)
 
 	}
 
+	r.Get("/{dokId:[0-9]+}/{fileId:[0-9]+}", handlerArchive)
 	r.Get("/{dokId:[0-9]+}/{fileId:[0-9]+}/*", handlerArchive)
-	r.Get("/{id:[0-9a-fA-F]{32}|[0-9]+}/*", handlerArchive)
 
-	r.Get("/{dokId:[0-9]+}/{fileId:[0-9]+}", handler)
-	r.Get("/{id:[0-9a-fA-F]{32}|[0-9]+}", handler)
+	r.Get("/{id:[0-9a-fA-F]{32}|[0-9]+}", handlerArchive)
+	r.Get("/{id:[0-9a-fA-F]{32}|[0-9]+}/*", handlerArchive)
 
 	srv := &http.Server{
 		Addr:              ":" + port,
@@ -603,16 +374,57 @@ func converter(
 	return false
 }
 
-func writeResponse(w http.ResponseWriter, r *http.Request, rdr io.ReadCloser, upRes *http.Response) bool {
-	// Write status before body to avoid implicit 200
+func writeResponse(w http.ResponseWriter, r *http.Request, rdr io.ReadCloser, upRes *http.Response, name string) bool {
+	defer rdr.Close()
 
+	// Determine content type from extension
+	ext := strings.ToLower(filepath.Ext(name))
+	var contentType string
+	switch ext {
+	case ".pdf":
+		contentType = "application/pdf"
+	case ".jpg", ".jpeg":
+		contentType = "image/jpeg"
+	case ".png":
+		contentType = "image/png"
+	case ".tif", ".tiff":
+		contentType = "image/tiff"
+	case ".gif":
+		contentType = "image/gif"
+	case ".bmp":
+		contentType = "image/bmp"
+	default:
+		contentType = upRes.Header.Get("Content-Type") // fallback
+	}
+
+	w.Header().Set("Content-Type", contentType)
+
+	// Content-Disposition: inline; filename*=UTF-8''...
+	if name != "" {
+		fn := filepath.Base(name)
+		w.Header().Set("Content-Disposition",
+			fmt.Sprintf("inline; filename*=UTF-8''%s", url.PathEscape(fn)))
+	}
+
+	// Cache-Control: same as before
 	w.Header().Set("Cache-Control", "public, max-age=2592000, immutable")
+
+	// Forward byte ranges if upstream provided (optional)
+	if rng := upRes.Header.Get("Accept-Ranges"); rng != "" {
+		w.Header().Set("Accept-Ranges", rng)
+	}
+	if cr := upRes.Header.Get("Content-Range"); cr != "" {
+		w.Header().Set("Content-Range", cr)
+	}
+
+	// Status code
 	w.WriteHeader(upRes.StatusCode)
-	_, err := io.Copy(w, rdr)
-	if err != nil {
+
+	// Copy body
+	if _, err := io.Copy(w, rdr); err != nil {
 		log.Printf("writing response body error: %v", err)
-		// cannot write http.Error here as headers and status are already sent
 		return true
 	}
+
 	return false
 }
