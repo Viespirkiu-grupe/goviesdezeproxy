@@ -47,16 +47,18 @@ func getenvMust(k string) string {
 	return v
 }
 
-func main() {
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		cmd := exec.Command("find", "/tmp", "-maxdepth", "1", "-type", "f", "-name", "magick*", "-mmin", "+5", "-delete")
+func cleanTmp() {
+	for {
+		cmd := exec.Command("find", "/tmp", "-mindepth", "1", "-mmin", "+5", "-exec", "rm", "-rf", "{}", "+")
 		if err := cmd.Run(); err != nil {
 			log.Println("Error running find:", err)
 		}
+		time.Sleep(1 * time.Minute)
 	}
+}
+
+func main() {
+	go cleanTmp() // runs in background
 
 	_ = godotenv.Load() // optional: ignore error
 
