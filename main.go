@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path"
 	"path/filepath"
@@ -47,6 +48,16 @@ func getenvMust(k string) string {
 }
 
 func main() {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		cmd := exec.Command("find", "/tmp", "-maxdepth", "1", "-type", "f", "-name", "magick*", "-mmin", "+5", "-delete")
+		if err := cmd.Run(); err != nil {
+			log.Println("Error running find:", err)
+		}
+	}
+
 	_ = godotenv.Load() // optional: ignore error
 
 	port := os.Getenv("PROXY_PORT")
