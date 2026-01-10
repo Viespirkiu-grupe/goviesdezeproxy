@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -26,13 +28,14 @@ import (
 )
 
 type ProxyInfo struct {
-	FileURL       string            `json:"fileUrl"`
-	Extension     string            `json:"extension"`
-	Extract       string            `json:"extract"`
-	Headers       map[string]string `json:"headers"`
-	ContentType   string            `json:"contentType"`
-	ContentLength int               `json:"contentLength"`
-	FileName      string            `json:"fileName"`
+	FileURL            string            `json:"fileUrl"`
+	Extension          string            `json:"extension"`
+	ContainerExtension string            `json:"containerExtension"`
+	Extract            string            `json:"extract"`
+	Headers            map[string]string `json:"headers"`
+	ContentType        string            `json:"contentType"`
+	ContentLength      int               `json:"contentLength"`
+	FileName           string            `json:"fileName"`
 }
 
 func getenvMust(k string) string {
@@ -200,7 +203,12 @@ func main() {
 				return
 			}
 
-			switch info.Extension {
+			ext := info.ContainerExtension
+			if ext == "" {
+				ext = info.Extension
+			}
+
+			switch ext {
 			case "eml":
 				rdr, err = ziputil.ExtractEmlAttachments(buf, target, r.URL.Query().Get("index"))
 				if err != nil {
@@ -244,13 +252,16 @@ func main() {
 			}
 		}
 
+		if info.Extract != "" {
+			name = info.FileName
+		}
+
 		// Always serve the **extracted file**
 		if converter(w, r, upRes, rdr, name) {
 			return
 		}
 
 		writeResponse(w, r, rdr, upRes, name)
-
 	}
 
 	r.Get("/{dokId:[0-9]+}/{fileId:[0-9]+}", handlerArchive)
@@ -288,15 +299,16 @@ func bestMatch(file string, files []string) (string, error) {
 	bestSim := 0.0
 	for _, f := range files {
 		sim := utils.Similarity(f, file)
+		log.Printf("considering file %q %v %s with similarity %.3f", f, f, f, sim)
 		if sim > bestSim || strings.ToLower(f) == strings.ToLower(file) {
 			bestSim = sim
 			bestMatch = f
-			log.Printf("considering file %q %v %s with similarity %.3f", f, f, f, sim)
 		}
 	}
 	if bestSim < 0.4 {
 		return "", errors.New("file not found in archive")
 	}
+	log.Printf("best match: %q with similarity %.3f", bestMatch, bestSim)
 	return bestMatch, nil
 }
 
@@ -378,32 +390,15 @@ func writeResponse(w http.ResponseWriter, r *http.Request, rdr io.ReadCloser, up
 	defer rdr.Close()
 
 	// Determine content type from extension
-	ext := strings.ToLower(filepath.Ext(name))
-	var contentType string
-	switch ext {
-	case ".pdf":
-		contentType = "application/pdf"
-	case ".jpg", ".jpeg":
-		contentType = "image/jpeg"
-	case ".png":
-		contentType = "image/png"
-	case ".tif", ".tiff":
-		contentType = "image/tiff"
-	case ".gif":
-		contentType = "image/gif"
-	case ".bmp":
-		contentType = "image/bmp"
-	default:
-		contentType = upRes.Header.Get("Content-Type") // fallback
-	}
+	contentType := contentTypeFromExt(name)
 
 	w.Header().Set("Content-Type", contentType)
 
 	// Content-Disposition: inline; filename*=UTF-8''...
 	if name != "" {
-		fn := filepath.Base(name)
+		nameOnly := path.Base(name) // get the last part of the path
 		w.Header().Set("Content-Disposition",
-			fmt.Sprintf("inline; filename*=UTF-8''%s", url.PathEscape(fn)))
+			fmt.Sprintf("inline; filename*=UTF-8''%s", url.PathEscape(nameOnly)))
 	}
 
 	// Cache-Control: same as before
@@ -427,4 +422,14 @@ func writeResponse(w http.ResponseWriter, r *http.Request, rdr io.ReadCloser, up
 	}
 
 	return false
+}
+
+func contentTypeFromExt(filename string) string {
+	ext := filepath.Ext(filename)
+	if ext != "" {
+		if ct := mime.TypeByExtension(ext); ct != "" {
+			return ct
+		}
+	}
+	return "application/octet-stream"
 }
