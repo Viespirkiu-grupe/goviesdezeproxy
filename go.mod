@@ -8,7 +8,6 @@ require (
 )
 
 require (
-	github.com/gen2brain/go-unarr v0.2.4
 	github.com/jhillyerd/enmime v1.3.0
 	github.com/mholt/archives v0.1.5
 	golang.org/x/text v0.30.0
