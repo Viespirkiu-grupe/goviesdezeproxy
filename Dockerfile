@@ -32,6 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     imagemagick \
     libemail-outlook-message-perl \
     default-jre libreoffice-java-common \
+    p7zip-full \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /temp/app /app

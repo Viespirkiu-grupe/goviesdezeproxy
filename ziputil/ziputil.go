@@ -2,32 +2,20 @@ package ziputil
 
 import (
 	"archive/zip"
+	"bufio"
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path"
-	"path/filepath"
 	"strconv"
 	"strings"
 
 	// "github.com/gen2brain/go-unarr"
 	// "github.com/gen2brain/go-unarr"
 	"github.com/jhillyerd/enmime"
-	"github.com/mholt/archives"
 )
-
-// func ListFilesInArchive(zipBytes []byte) ([]string, error) {
-// 	a, err := unarr.NewArchiveFromMemory(zipBytes)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("nepavyko atidaryti archyvo: %w", err)
-// 	}
-// 	defer a.Close()
-
-// 	return a.List()
-// }
 
 func GetFileFromZipArchive(zipBytes []byte, filename string) (io.ReadCloser, error) {
 	rdr := bytes.NewReader(zipBytes)
@@ -48,118 +36,147 @@ func GetFileFromZipArchive(zipBytes []byte, filename string) (io.ReadCloser, err
 	return nil, fmt.Errorf("failas %q zip’e nerastas", filename)
 }
 
-func IdentityFilesV2(archiveBytes []byte) ([]string, error) {
-	format, stream, err := archives.Identify(context.TODO(), "file", bytes.NewReader(archiveBytes))
-	if err != nil {
-		return nil, fmt.Errorf("nepavyko atidaryti archyvo: %w", err)
+func detectArchiveType(b []byte) string {
+	if len(b) >= 4 && bytes.Equal(b[:4], []byte("PK\x03\x04")) {
+		return "zip"
 	}
-	extractor, ok := format.(archives.Extractor)
-	if !ok {
-		return nil, fmt.Errorf("formatas %T nepalaiko failų išskleidimo (gali būti, kad tai ne archyvas)", format)
+	// RAR4
+	if len(b) >= 7 && bytes.Equal(b[:7], []byte{0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x00}) {
+		return "rar"
 	}
-	var names []string
-	dir := ""
-	err = extractor.Extract(context.TODO(), stream, func(ctx context.Context, info archives.FileInfo) error {
-		if info.IsDir() {
-			dir = info.Name()
-			return nil
-		}
-		names = append(names, filepath.Join(dir, info.Name()))
-		return nil
-	})
+	// RAR5
+	if len(b) >= 8 && bytes.Equal(b[:8], []byte{0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x01, 0x00}) {
+		return "rar"
+	}
+	if len(b) >= 6 && bytes.Equal(b[:6], []byte("7z\xBC\xAF\x27\x1C")) {
+		return "7z"
+	}
+	return "unknown"
+}
 
-	return names, nil
+func IdentityFilesV2(archiveBytes []byte) ([]string, error) {
+	switch detectArchiveType(archiveBytes) {
+
+	case "zip":
+		return listZip(archiveBytes)
+
+	case "rar", "7z":
+		return listWith7z(archiveBytes)
+
+	default:
+		return nil, fmt.Errorf("nežinomas archyvo formatas")
+	}
+}
+
+func listZip(b []byte) ([]string, error) {
+	r, err := zip.NewReader(bytes.NewReader(b), int64(len(b)))
+	if err != nil {
+		return nil, err
+	}
+
+	var out []string
+	for _, f := range r.File {
+		if !strings.HasSuffix(f.Name, "/") {
+			out = append(out, f.Name)
+		}
+	}
+	return out, nil
 }
 
 func GetFileFromArchiveV2(archiveBytes []byte, filename string) (io.ReadCloser, error) {
-	var buf bytes.Buffer
-	format, stream, err := archives.Identify(context.TODO(), filename, bytes.NewReader(archiveBytes))
+	switch detectArchiveType(archiveBytes) {
+
+	case "zip":
+		return getFromZip(archiveBytes, filename)
+
+	case "rar", "7z":
+		return getWith7z(archiveBytes, filename)
+
+	default:
+		return nil, fmt.Errorf("nežinomas archyvo formatas")
+	}
+}
+
+func getFromZip(b []byte, filename string) (io.ReadCloser, error) {
+	r, err := zip.NewReader(bytes.NewReader(b), int64(len(b)))
 	if err != nil {
-		return nil, fmt.Errorf("nepavyko atidaryti archyvo: %w", err)
+		return nil, err
 	}
-	extractor, ok := format.(archives.Extractor)
-	if !ok {
-		return nil, fmt.Errorf("formatas %T nepalaiko failų išskleidimo (gali būti, kad tai ne archyvas)", format)
+
+	for _, f := range r.File {
+		if f.Name == filename {
+			return f.Open()
+		}
 	}
-	dir := ""
-	err = extractor.Extract(context.TODO(), stream, func(ctx context.Context, info archives.FileInfo) error {
-		if info.IsDir() {
-			dir = info.Name()
+	return nil, fmt.Errorf("failas nerastas: %s", filename)
+}
+
+func listWith7z(b []byte) ([]string, error) {
+	tmp, err := os.CreateTemp("", "arc-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(tmp.Name())
+	os.WriteFile(tmp.Name(), b, 0644)
+
+	cmd := exec.Command("7z", "l", "-slt", tmp.Name())
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	var files []string
+	scanner := bufio.NewScanner(bytes.NewReader(out))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "Path = ") {
+			p := strings.TrimPrefix(line, "Path = ")
+			if !strings.HasSuffix(p, "/") {
+				files = append(files, p)
+			}
+		}
+	}
+	return files, scanner.Err()
+}
+func getWith7z(b []byte, filename string) (io.ReadCloser, error) {
+	tmp, err := os.CreateTemp("", "arc-*")
+	if err != nil {
+		return nil, err
+	}
+	os.WriteFile(tmp.Name(), b, 0644)
+
+	cmd := exec.Command(
+		"7z", "x",
+		"-so",
+		tmp.Name(),
+		filename,
+	)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+
+	return struct {
+		io.Reader
+		io.Closer
+	}{
+		Reader: stdout,
+		Closer: closerFunc(func() error {
+			cmd.Wait()
+			os.Remove(tmp.Name())
 			return nil
-		}
-		if filepath.Join(dir, info.Name()) != filename {
-			return nil
-		}
-		fh, err := info.Open()
-		if err != nil {
-			return fmt.Errorf("nepavyko atidaryti failo %q: %w", filename, err)
-		}
-		defer fh.Close()
-		buf.ReadFrom(fh)
-		return nil
-	})
-	return io.NopCloser(bytes.NewReader(buf.Bytes())), nil
-
+		}),
+	}, nil
 }
 
-func ListFilesFromRarArchive(archiveBytes []byte) ([]string, error) {
-	var format archives.Rar
-	var names []string
-	err := format.Extract(context.TODO(), bytes.NewReader(archiveBytes), func(ctx context.Context, info archives.FileInfo) error {
-		names = append(names, info.Name())
-		return nil
-	})
+type closerFunc func() error
 
-	if err != nil {
-		return nil, fmt.Errorf("nepavyko atidaryti archyvo: %w", err)
-	}
-	return names, nil
-}
-
-func GetFileFromRarArchive(archiveBytes []byte, filename string) (io.ReadCloser, error) {
-	var format archives.Rar
-	var buf bytes.Buffer
-	err := format.Extract(context.TODO(), bytes.NewReader(archiveBytes), func(ctx context.Context, info archives.FileInfo) error {
-		fh, err := info.Open()
-		if err != nil {
-			return fmt.Errorf("nepavyko atidaryti failo %q: %w", filename, err)
-		}
-		defer fh.Close()
-		buf.ReadFrom(fh)
-		return nil
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("nepavyko atidaryti archyvo: %w", err)
-	}
-	return io.NopCloser(bytes.NewReader(buf.Bytes())), nil
-}
-
-// func GetFileFromArchive(archiveBytes []byte, filename string) (io.ReadCloser, error) {
-// 	a, err := unarr.NewArchiveFromMemory(archiveBytes)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("nepavyko atidaryti archyvo: %w", err)
-// 	}
-
-// 	defer func() {
-// 		if err != nil {
-// 			a.Close()
-// 		}
-// 	}()
-
-// 	err = a.EntryFor(filename)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("failas %q nerastas archyve: %w", filename, err)
-// 	}
-// 	defer a.Close()
-
-// 	b, err := a.ReadAll()
-// 	if err != nil {
-// 		return nil, fmt.Errorf("nepavyko nuskaityti failo %q: %w", filename, err)
-// 	}
-
-// 	return io.NopCloser(bytes.NewReader(b)), nil
-// }
+func (c closerFunc) Close() error { return c() }
 
 // GetFileFromZip suranda faile esantį įrašą pagal filename ir grąžina jo turinį kaip io.ReadCloser.
 // filename lyginamas pagal basename (pvz. "failas.pdf" ras "dir/sub/failas.pdf").

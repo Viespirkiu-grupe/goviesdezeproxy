@@ -246,6 +246,7 @@ func main() {
 			default: // normal archive (zip/rar/tar)
 				files, err := ziputil.IdentityFilesV2(buf)
 				if err != nil {
+					log.Printf("failed to open archive: %v", err)
 					http.Error(w, "invalid archive", http.StatusBadGateway)
 					return
 				}
