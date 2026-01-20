@@ -163,7 +163,6 @@ func getWith7z(b []byte, filename string) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
-	go io.Copy(os.Stdout, stdout)
 	go io.Copy(os.Stderr, stderr)
 
 	if err := cmd.Start(); err != nil {
