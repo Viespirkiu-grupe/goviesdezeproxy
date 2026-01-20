@@ -63,8 +63,8 @@ func IdentityFilesV2(archiveBytes []byte) ([]string, error) {
 	case "zip":
 		return listZip(archiveBytes)
 
-	case "7z":
-		return listWith7z(archiveBytes)
+	// case "7z":
+	// 	return listWith7z(archiveBytes)
 
 	default:
 		return IdentityFilesV3(archiveBytes)
@@ -92,8 +92,8 @@ func GetFileFromArchiveV2(archiveBytes []byte, filename string) (io.ReadCloser, 
 	case "zip":
 		return getFromZip(archiveBytes, filename)
 
-	case "7z":
-		return getWith7z(archiveBytes, filename)
+	// case "7z":
+	// 	return getWith7z(archiveBytes, filename)
 
 	default:
 		return GetFileFromArchiveV3(archiveBytes, filename)
