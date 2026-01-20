@@ -262,6 +262,7 @@ func main() {
 					http.Error(w, "error extracting file", http.StatusBadGateway)
 					return
 				}
+				defer rdr.Close()
 				name = best
 			}
 		}
